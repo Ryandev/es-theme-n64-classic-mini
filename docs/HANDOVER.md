@@ -164,9 +164,17 @@ The owner's design (`highlight_1.png`), modelled on the NES/SNES Classic menu:
     `PoE`, `Fan`) from the 29-solid `step/radxa_x4.py`, and mounts the Radxa X4 **inverted**
     (`180 deg` roll about `+X` at `Z = 8.20 mm`, flush with the `+Y` rear wall at
     `RADXA_Y_CENTRE = 18.80 mm`) so its rear Micro-HDMI, USB-C PD power, and 3.5mm audio jacks
-    protrude through the rear wall and its milled finned aluminium heatsink
-    (`variant/radxa_heatsink.py`, `40 x 38 x 10.4 mm`, `Z = 9.80 .. 20.20 mm`) faces **UP (`+Z`)**
-    into the top dome.
+    protrude through the rear wall, and its N100 faces **UP (`+Z`)** into the top dome.
+- **Cooling (REQ-04, 2026-11-11):** a bought Same Sky HSB26-343408 pin-fin heat sink on the N100
+  (paste, no pad), a Sunon MF30060V2 30 mm fan under the 25 top louvers blowing room air down
+  through the pins, a printed duct and intake hood, floor vents breathing through the gap under
+  4 Bumpon SJ5012 feet, and through-cut waist slots. `cad/lib/subassembly/cooling_check.py` checks
+  fit, the clamp, that the duct leaks only through the pins (voxel flood), that every vent is open,
+  and computes the junction temperature from the measured openings (`cad/lib/thermal.py`: ~80 C
+  at the stock 6 W in a 30 C room). The model is an estimate; the real check is on the console:
+  `python3 -m n64mini.console.thermal_test --room <measured room C>` loads every core for 20 min,
+  reads the SSD for the last 5, and passes only if the package stays within 55 K of the room, the
+  CPU never throttles and the SSD stays at or under 70 C. Keep the BIOS PL1 at its stock 6 W.
 - **Authentic 50%-scale N64 shells (`cad/lib/part/upper_shell.py` & `lower_tub.py`):** reconstructed
   from the measured B-Rep primitives of `step/n64_shell.py` (`0.5x`: twin protruding `R = 12.50 mm`
   front cylindrical pods with `R = 5.00 mm` convex top domes, bowed front/rear walls, `120.00 mm`

@@ -21,6 +21,7 @@ n64mini-flip = "n64mini.console.flip:main"
 n64mini-launch = "n64mini.console.launch:main"
 n64mini-setup = "n64mini.console.setup:main"
 n64mini-suspend = "n64mini.console.suspend:main"
+n64mini-thermal-test = "n64mini.console.thermal_test:main"
 n64mini-sandbox = "n64mini.harness.sandbox:main"
 
 [dependency-groups]

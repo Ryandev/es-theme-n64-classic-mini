@@ -11,11 +11,10 @@ testable standard-library Python without subprocesses:
 - ``decide``: checks whether a game is running (``GET /runningGame``). Outside a game it prints
   ``idle`` so pressing Reset in the carousel does nothing. Inside a game it prints ``port`` if the
   selected ROM is flipped to Port (``modes.json``), else ``emulator``.
-- ``compact``: after ``hotkeygen --send save_state`` writes ``<rom>.st<slot>`` (and
-  ``<rom>.st<slot>.png``), renumbers the game's ``.st0..9`` files in chronological order starting
-  at ``.st0`` so the card's four suspend-point circles (``slot0saved``..``slot3saved``, AC-T09)
-  fill from slot 0 without gaps.
-- ``finish``: after the emulator exits, pins ``CurrentStateSlot = 9`` in ``mupen64plus.cfg``.
+- ``stage``: after ``hotkeygen --send save_state``, moves the state written since the press to
+  ``<rom>.pending`` (with its screenshot), touching no player slot.
+- ``open``: after the emulator exits, stages it if ``stage`` timed out, pins
+  ``CurrentStateSlot = 9`` in ``mupen64plus.cfg`` and opens the Suspend Point List.
 
 Every save mupen64plus makes goes to ``.st9`` (``WRITE_SLOT``): each launch passes
 ``-state_slot 9`` and setup turns ``n64.incrementalsavestates`` off, so no save, Reset or an
@@ -85,39 +84,6 @@ def decide(
     except (FlipError, OSError, ValueError):
         return "emulator"
     return "port" if modes.get(rom) == "port" else "emulator"
-
-
-def compact_slots(saves_dir: Path, rom: str) -> int:
-    """Renumber ``<rom>.st0..9`` (and ``.png``) consecutively from ``.st0`` by modification time.
-
-    Returns the number of suspend points present for ``rom``.
-    """
-    if not rom or not saves_dir.is_dir():
-        return 0
-    found: list[tuple[int, int, Path]] = []
-    for slot in range(SLOT_COUNT):
-        state = saves_dir / f"{rom}.st{slot}"
-        if state.is_file():
-            found.append((state.stat().st_mtime_ns, slot, state))
-    found.sort()
-    # Stage through .tmp names first so a swap (or shifting down) never clobbers a live file.
-    staged: list[tuple[int, Path, Path | None]] = []
-    for new_slot, (_, old_slot, state) in enumerate(found):
-        if new_slot == old_slot:
-            continue
-        tmp_state = saves_dir / f"{rom}.st{new_slot}.tmp"
-        state.replace(tmp_state)
-        shot = saves_dir / f"{rom}.st{old_slot}.png"
-        tmp_shot: Path | None = None
-        if shot.is_file():
-            tmp_shot = saves_dir / f"{rom}.st{new_slot}.png.tmp"
-            shot.replace(tmp_shot)
-        staged.append((new_slot, tmp_state, tmp_shot))
-    for new_slot, tmp_state, tmp_shot in staged:
-        tmp_state.replace(saves_dir / f"{rom}.st{new_slot}")
-        if tmp_shot is not None:
-            tmp_shot.replace(saves_dir / f"{rom}.st{new_slot}.png")
-    return len(found)
 
 
 def _fresh_reset_states(saves_dir: Path, rom: str, since_ns: int) -> list[tuple[int, int, Path]]:
@@ -231,7 +197,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Handle the console's physical Reset button (AC-T18)."
     )
-    parser.add_argument("action", choices=["decide", "compact", "stage", "open", "finish"])
+    parser.add_argument("action", choices=["decide", "stage", "open"])
     parser.add_argument("--roms", type=Path, default=Path("/userdata/roms/n64"))
     parser.add_argument("--saves", type=Path, default=SAVES_DIR)
     parser.add_argument("--selected", type=Path, default=SELECTED_FILE)
@@ -248,13 +214,11 @@ def main(argv: list[str] | None = None) -> int:
         parser.error(f"{args.action} needs --since-ns")
     if args.action == "decide":
         sys.stdout.write(decide(Engine(), args.roms, args.selected) + "\n")
-    elif args.action == "compact":
-        compact_slots(args.saves, selected_rom(args.selected))
     elif args.action == "stage":
         wait_and_stage_pending(
             args.saves, selected_rom(args.selected), args.shot, since_ns=args.since_ns
         )
-    elif args.action == "open":
+    else:  # open
         with contextlib.suppress(EngineError, OSError, TimeoutError):
             wait_for_launch_to_end(Engine().game_running)
         stage_pending(
@@ -263,11 +227,6 @@ def main(argv: list[str] | None = None) -> int:
         args.shot.unlink(missing_ok=True)
         pin_mupen_slot(args.mupen_cfg)
         notify_suspend_drawer(args.fifo)
-    else:
-        with contextlib.suppress(EngineError, OSError, TimeoutError):
-            wait_for_launch_to_end(Engine().game_running)
-        compact_slots(args.saves, selected_rom(args.selected))
-        pin_mupen_slot(args.mupen_cfg)
     return 0
 
 

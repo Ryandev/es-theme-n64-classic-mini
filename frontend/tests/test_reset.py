@@ -1,4 +1,4 @@
-"""AC-T18: the Reset-button handler (n64mini.console.reset) and slot compaction."""
+"""AC-T18: the Reset-button handler (n64mini.console.reset)."""
 
 from __future__ import annotations
 
@@ -72,34 +72,6 @@ def test_decide_distinguishes_emulator_and_port_when_a_game_runs(tmp_path: Path)
     assert rs.decide(_FakeEngine(running=True), roms, selected) == "emulator"
 
 
-def test_compact_slots_renumbers_states_and_screenshots_from_slot_zero(tmp_path: Path) -> None:
-    saves = tmp_path / "saves"
-    rom = "Bomberman 64 (U) [!].z64"
-    assert rs.compact_slots(saves, rom) == 0
-    saves.mkdir()
-    assert rs.compact_slots(saves, "") == 0
-
-    st0 = saves / f"{rom}.st0"
-    st2 = saves / f"{rom}.st2"
-    st2_png = saves / f"{rom}.st2.png"
-    st5 = saves / f"{rom}.st5"
-    st0.write_bytes(b"first")
-    st2.write_bytes(b"second")
-    st2_png.write_bytes(b"png-second")
-    st5.write_bytes(b"third")
-    os.utime(st0, ns=(1_000_000_000, 1_000_000_000))
-    os.utime(st2, ns=(2_000_000_000, 2_000_000_000))
-    os.utime(st5, ns=(3_000_000_000, 3_000_000_000))
-
-    assert rs.compact_slots(saves, rom) == 3
-    assert (saves / f"{rom}.st0").read_bytes() == b"first"
-    assert (saves / f"{rom}.st1").read_bytes() == b"second"
-    assert (saves / f"{rom}.st1.png").read_bytes() == b"png-second"
-    assert (saves / f"{rom}.st2").read_bytes() == b"third"
-    assert not (saves / f"{rom}.st2.png").exists()
-    assert not (saves / f"{rom}.st5").exists()
-
-
 def test_pin_mupen_slot_updates_current_state_slot_when_present(tmp_path: Path) -> None:
     cfg = tmp_path / "mupen64plus.cfg"
     assert rs.pin_mupen_slot(cfg) is False
@@ -113,7 +85,7 @@ def test_pin_mupen_slot_updates_current_state_slot_when_present(tmp_path: Path) 
     assert "CurrentStateSlot = 8" in cfg.read_text(encoding="utf-8")
 
 
-def test_cli_decide_compact_and_finish(
+def test_cli_decide_prints_idle_outside_a_game(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     roms = tmp_path / "roms"
@@ -140,14 +112,6 @@ def test_cli_decide_compact_and_finish(
     ]
     assert rs.main(["decide", *common]) == 0
     assert capsys.readouterr().out.strip() == "idle"
-
-    assert rs.main(["compact", *common]) == 0
-    assert (saves / f"{rom}.st0").read_bytes() == b"state"
-
-    (saves / f"{rom}.st3").write_bytes(b"state2")
-    assert rs.main(["finish", *common]) == 0
-    assert (saves / f"{rom}.st1").read_bytes() == b"state2"
-    assert "CurrentStateSlot = 9" in cfg.read_text(encoding="utf-8")
 
 
 def test_stage_pending_stages_overflow_or_recent_slot_without_touching_saved_slots(
