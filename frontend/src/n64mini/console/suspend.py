@@ -43,6 +43,9 @@ RESUME_FILE: Final = Path(tempfile.gettempdir()) / "n64mini-resume.json"
 SLOT_COUNT: Final = 4
 EXIT_CLOSED: Final = 0
 EXIT_LAUNCH: Final = 10
+# Returned by the stdin poller when its input closes. Not an action: a dead input source must
+# never press B, because B in Pending Save mode deletes the Reset suspend point.
+INPUT_CLOSED: Final = "<input closed>"
 
 SCREEN_SIZE: Final = (1280, 720)
 DRAWER_Y: Final = 372
@@ -821,6 +824,9 @@ def run_interactive_loop(
             tick += 1
             continue
         for tok in tokens:
+            if tok == INPUT_CLOSED:
+                # Leave any pending state on disk: the next open offers it again.
+                return EXIT_CLOSED, model
             action = parse_command_token(tok)
             if action is None:
                 continue
@@ -1040,7 +1046,7 @@ def make_stdin_poller() -> Callable[[], list[str]]:
             return []
         chunk = os.read(sys.stdin.fileno(), 256).decode("utf-8", errors="ignore")
         if not chunk:
-            return ["b"]
+            return [INPUT_CLOSED]
         tokens, rest = drain_stdin_tokens(state["buf"] + chunk)
         state["buf"] = rest
         return tokens

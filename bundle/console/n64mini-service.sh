@@ -5,9 +5,9 @@
 # through the engine. Either way it then draws the strip of box art under the cards (AC-T20) for
 # the list as it is now, so art scraped since the last boot shows in it.
 [ "${1:-}" = start ] || exit 0
-# Clean up any interrupted .tmp / .pending state files left by a hard power-off (cord pull)
-rm -f /userdata/saves/n64/*.tmp /userdata/saves/n64/*.pending /userdata/saves/n64/*.pending.png \
-      /tmp/n64mini-resume.json 2>/dev/null || true
+# Boot never deletes save files. A `.pending` is a whole Reset suspend point (placed by rename) that
+# the drawer offers again, and a `.stN.tmp` can be a real slot moved aside mid-renumber.
+rm -f /tmp/n64mini-resume.json
 log=/userdata/system/logs/n64mini-setup.log
 for bundle in /media/*/n64mini-bundle; do
     [ -f "$bundle/n64mini.json" ] || continue

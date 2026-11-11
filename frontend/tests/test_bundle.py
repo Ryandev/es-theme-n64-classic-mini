@@ -8,7 +8,9 @@ one side can't leave the console calling a file that isn't there.
 from __future__ import annotations
 
 import json
+import os
 import re
+import subprocess
 from pathlib import Path, PurePosixPath
 
 import pytest
@@ -296,3 +298,20 @@ def test_boot_splash_replaces_batoceras_video_and_drops_batocera_boot_branding()
     assert "/usr/share/batocera/splash/splash.srt" in boot_custom
     assert "/echo Booting Batocera/d" in boot_custom
     assert "/SAY Booting Batocera/d" in boot_custom
+
+
+def test_booting_deletes_no_save_files(tmp_path: Path) -> None:
+    # B2: the service removed every unfiled `.pending` Reset suspend point (and `.tmp` files that
+    # can be real slots mid-renumber) at boot. Run the real script with `rm` recorded, not run.
+    log = tmp_path / "rm.log"
+    shim = tmp_path / "bin"
+    shim.mkdir()
+    fake_rm = shim / "rm"
+    fake_rm.write_text(f'#!/bin/sh\nprintf "%s\\n" "$@" >> "{log}"\n')
+    fake_rm.chmod(0o755)
+    env = {**os.environ, "PATH": f"{shim}:{os.environ['PATH']}"}
+    script = BUNDLE / "console" / "n64mini-service.sh"
+    subprocess.run(["bash", str(script), "start"], env=env, check=False, capture_output=True)
+    removed = log.read_text().split() if log.exists() else []
+    assert removed[0] == "-f"  # the shim ran, so the script reached its clean-up
+    assert [p for p in removed[1:] if p.startswith("/userdata/")] == []

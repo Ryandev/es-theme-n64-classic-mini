@@ -6,6 +6,8 @@ import json
 import os
 from typing import TYPE_CHECKING, override
 
+import pytest
+
 from n64mini.console import reset as rs
 from n64mini.console.engine import Engine, EngineError
 from n64mini.console.flip import BADGE_DIR, MODES_FILE
@@ -13,7 +15,8 @@ from n64mini.console.flip import BADGE_DIR, MODES_FILE
 if TYPE_CHECKING:
     from pathlib import Path
 
-    import pytest
+
+PRESS = 30_000_000_000  # when Reset was pressed, in ns
 
 
 class _FakeEngine(Engine):
@@ -153,16 +156,16 @@ def test_stage_pending_stages_overflow_or_recent_slot_without_touching_saved_slo
 ) -> None:
     saves = tmp_path / "saves"
     rom = "Bomberman 64 (U) [!].z64"
-    assert rs.stage_pending(saves, rom) is False
+    assert rs.stage_pending(saves, rom, since_ns=PRESS) is False
     saves.mkdir()
-    assert rs.stage_pending(saves, "") is False
-    assert rs.stage_pending(saves, rom) is False
+    assert rs.stage_pending(saves, "", since_ns=PRESS) is False
+    assert rs.stage_pending(saves, rom, since_ns=PRESS) is False
 
-    # Old user slot (.st0 > 10s ago) is not treated as a newly captured Reset state.
+    # Old user slot (.st0 written before the press) is not treated as a newly captured Reset state.
     st0 = saves / f"{rom}.st0"
     st0.write_bytes(b"keep-slot-0")
     os.utime(st0, ns=(1_000_000_000, 1_000_000_000))
-    assert rs.stage_pending(saves, rom, now_ns=30_000_000_000) is False
+    assert rs.stage_pending(saves, rom, since_ns=PRESS) is False
     assert st0.read_bytes() == b"keep-slot-0"
 
     # Overflow slots .st8 and .st9 (+ .st9.png): newest becomes .pending, .st8 + fallback cleaned.
@@ -174,9 +177,9 @@ def test_stage_pending_stages_overflow_or_recent_slot_without_touching_saved_slo
     st8.write_bytes(b"older-overflow")
     st9.write_bytes(b"newest-overflow")
     st9_png.write_bytes(b"newest-shot")
-    os.utime(st8, ns=(2_000_000_000, 2_000_000_000))
-    os.utime(st9, ns=(3_000_000_000, 3_000_000_000))
-    assert rs.stage_pending(saves, rom, fallback_shot=fallback) is True
+    os.utime(st8, ns=(32_000_000_000, 32_000_000_000))
+    os.utime(st9, ns=(33_000_000_000, 33_000_000_000))
+    assert rs.stage_pending(saves, rom, since_ns=PRESS, fallback_shot=fallback) is True
     assert (saves / f"{rom}.pending").read_bytes() == b"newest-overflow"
     assert (saves / f"{rom}.pending.png").read_bytes() == b"newest-shot"
     assert not fallback.exists()
@@ -187,7 +190,7 @@ def test_stage_pending_stages_overflow_or_recent_slot_without_touching_saved_slo
     # Standalone mupen64plus writes no .st9.png -> fallback_shot becomes .pending.png.
     fallback.write_bytes(b"batocera-screenshot-bytes")
     st9.write_bytes(b"mupen-state")
-    assert rs.stage_pending(saves, rom, fallback_shot=fallback) is True
+    assert rs.stage_pending(saves, rom, since_ns=PRESS, fallback_shot=fallback) is True
     assert (saves / f"{rom}.pending").read_bytes() == b"mupen-state"
     assert (saves / f"{rom}.pending.png").read_bytes() == b"batocera-screenshot-bytes"
     assert not fallback.exists()
@@ -195,22 +198,22 @@ def test_stage_pending_stages_overflow_or_recent_slot_without_touching_saved_slo
     # Emulator-written .png without a fallback_shot argument also stages cleanly.
     st9.write_bytes(b"overflow-no-fallback")
     st9_png.write_bytes(b"shot-no-fallback")
-    assert rs.stage_pending(saves, rom) is True
+    assert rs.stage_pending(saves, rom, since_ns=PRESS) is True
     assert (saves / f"{rom}.pending.png").read_bytes() == b"shot-no-fallback"
 
     # Shotless overflow state without fallback clears any stale .pending.png.
     st9.write_bytes(b"no-shot-state")
-    assert rs.stage_pending(saves, rom) is True
+    assert rs.stage_pending(saves, rom, since_ns=PRESS) is True
     assert (saves / f"{rom}.pending").read_bytes() == b"no-shot-state"
     assert not (saves / f"{rom}.pending.png").exists()
 
-    # Fallback when mupen64plus wrote into .st0..3 within the last 10s: newest staged, older kept.
+    # mupen64plus wrote into .st0..3 since the press: newest staged, older kept.
     (saves / f"{rom}.pending").unlink()
     st1 = saves / f"{rom}.st1"
     st1.write_bytes(b"recent-slot-1")
-    os.utime(st0, ns=(25_000_000_000, 25_000_000_000))
-    os.utime(st1, ns=(28_000_000_000, 28_000_000_000))
-    assert rs.stage_pending(saves, rom, now_ns=30_000_000_000) is True
+    os.utime(st0, ns=(30_500_000_000, 30_500_000_000))
+    os.utime(st1, ns=(31_000_000_000, 31_000_000_000))
+    assert rs.stage_pending(saves, rom, since_ns=PRESS) is True
     assert (saves / f"{rom}.pending").read_bytes() == b"recent-slot-1"
     assert st0.read_bytes() == b"keep-slot-0"
 
@@ -227,17 +230,38 @@ def test_wait_and_stage_pending_polls_for_flushed_state(tmp_path: Path) -> None:
 
     st9.write_bytes(b"")
     assert (
-        rs.wait_and_stage_pending(saves, rom, fallback, attempts=2, sleep_fn=_noop_sleep) is False
+        rs.wait_and_stage_pending(saves, rom, fallback, since_ns=0, sleep_fn=_noop_sleep) is False
     )
 
     def _flush_on_sleep(_dt: float) -> None:
         st9.write_bytes(b"flushed-bytes")
 
     assert (
-        rs.wait_and_stage_pending(saves, rom, fallback, attempts=3, sleep_fn=_flush_on_sleep)
+        rs.wait_and_stage_pending(saves, rom, fallback, since_ns=0, sleep_fn=_flush_on_sleep)
         is True
     )
     assert (saves / f"{rom}.pending").read_bytes() == b"flushed-bytes"
+
+
+def test_a_stale_resume_copy_is_not_staged_as_the_new_suspend_point(tmp_path: Path) -> None:
+    # B3: after a Start-resume, .st9 holds the resumed copy. Reset must wait for mupen64plus to
+    # flush the new state, not stage the stale copy (and lose the new screenshot).
+    rom = "Bomberman 64 (U) [!].z64"
+    st9 = tmp_path / f"{rom}.st9"
+    st9.write_bytes(b"resumed-copy")
+    os.utime(st9, ns=(10_000_000_000, 10_000_000_000))
+    press = 60_000_000_000
+
+    def _mupen_flushes(_dt: float) -> None:
+        st9.write_bytes(b"new-suspend-point")
+        (tmp_path / f"{rom}.st9.png").write_bytes(b"new-shot")
+
+    staged = rs.wait_and_stage_pending(
+        tmp_path, rom, tmp_path / "none.png", since_ns=press, sleep_fn=_mupen_flushes
+    )
+    assert staged is True
+    assert (tmp_path / f"{rom}.pending").read_bytes() == b"new-suspend-point"
+    assert (tmp_path / f"{rom}.pending.png").read_bytes() == b"new-shot"
 
 
 def test_notify_suspend_drawer_and_cli_stage_open(
@@ -287,6 +311,10 @@ def test_notify_suspend_drawer_and_cli_stage_open(
         "--fifo",
         str(fifo),
     ]
+    with pytest.raises(SystemExit) as refused:  # a stage without the press time is refused
+        rs.main(["stage", *common])
+    assert refused.value.code == 2
+    common = [*common, "--since-ns", "0"]
     assert rs.main(["stage", *common]) == 0
     assert (saves / f"{rom}.pending").read_bytes() == b"staged-via-cli"
 

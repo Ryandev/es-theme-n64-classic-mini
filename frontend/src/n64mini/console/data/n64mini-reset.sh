@@ -9,12 +9,15 @@ export PYTHONPATH="$root${PYTHONPATH:+:$PYTHONPATH}"
 mode="$(python3 -m n64mini.console.reset decide "$@")"
 case "$mode" in
     emulator)
+        # Only a state written after this moment is the new suspend point (B3).
+        # (python3, not `date +%s%N`: BusyBox date may lack %N.)
+        since="$(python3 -c 'import time; print(time.time_ns())')"
         rm -f /tmp/n64mini-reset-shot.png
         batocera-screenshot /tmp/n64mini-reset-shot.png >/dev/null 2>&1 || true
         hotkeygen --send save_state
-        python3 -m n64mini.console.reset stage "$@"
+        python3 -m n64mini.console.reset stage --since-ns "$since" "$@"
         hotkeygen --send exit
-        python3 -m n64mini.console.reset open "$@"
+        python3 -m n64mini.console.reset open --since-ns "$since" "$@"
         ;;
     port)
         hotkeygen --send exit

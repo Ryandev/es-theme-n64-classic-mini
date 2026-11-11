@@ -320,7 +320,7 @@ def test_stdin_tokens_rom_helpers_and_x11_backdrop(
     assert thumb is not None
     assert thumb.size == (160, 120)
 
-    # make_stdin_poller: not ready -> [], chunk -> tokens, EOF b"" -> ["b"].
+    # make_stdin_poller: not ready -> [], chunk -> tokens, EOF b"" -> INPUT_CLOSED (never "b").
     chunks = [b"left\nc_down\n", b""]
     ready_flags = [False, True, True]
 
@@ -340,7 +340,7 @@ def test_stdin_tokens_rom_helpers_and_x11_backdrop(
     poller = sp.make_stdin_poller()
     assert poller() == []
     assert poller() == ["left", "c_down"]
-    assert poller() == ["b"]
+    assert poller() == [sp.INPUT_CLOSED]
 
     # capture_x11_backdrop: OSError, null display, null XImage, 1280x720, and scaled 640x360.
     def _no_x11() -> ctypes.CDLL:
@@ -486,3 +486,27 @@ def test_interactive_loop_and_cli_main(tmp_path: Path) -> None:
         == 0
     )
     assert len(sdl_cli.SDL_Quit.calls) == 1
+
+
+def test_closed_input_closes_the_drawer_without_deleting_the_reset_suspend_point(
+    tmp_path: Path,
+) -> None:
+    # B1: the poller used to turn EOF into "b", which in Pending Save mode deletes the state.
+    (tmp_path / f"{ROM}.pending").write_bytes(b"from-reset")
+    shot = tmp_path / f"{ROM}.pending.png"
+    Image.new("RGB", (32, 24), (10, 20, 30)).save(shot)
+    shot_bytes = shot.read_bytes()
+    sink = _FakeSink()
+    # A "b" queued behind the closure must never be reached.
+    polls = iter([[sp.INPUT_CLOSED, "b"]])
+    rc, model = sp.run_interactive_loop(
+        sp.load_model(tmp_path, ROM),
+        sp.load_suspend_assets(tmp_path),
+        sink,
+        lambda: next(polls),
+    )
+    assert rc == sp.EXIT_CLOSED
+    assert sink.sounds == []
+    assert model.pending is not None
+    assert (tmp_path / f"{ROM}.pending").read_bytes() == b"from-reset"
+    assert shot.read_bytes() == shot_bytes

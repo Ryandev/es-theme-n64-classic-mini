@@ -48,6 +48,10 @@ RESET_SHOT: Final = Path(tempfile.gettempdir()) / "n64mini-reset-shot.png"
 SLOT_COUNT: Final = 10
 USER_SLOTS: Final = 4
 NEXT_WRITE_SLOT: Final = 8  # AutoStateSlotIncrement increments 8 -> 9 before writing
+STAGE_ATTEMPTS: Final = 30  # 50 ms apart: mupen64plus gets 1.5 s to flush the state
+# File times can trail the clock: the kernel stamps them from a coarse clock, and FAT keeps only
+# 2 s. A resumed copy is written before the game boots, so it is always older than this.
+MTIME_SLACK_NS: Final = 2_000_000_000
 _SLOT_RE: Final = re.compile(r"^CurrentStateSlot\s*=.*$", re.MULTILINE)
 
 
@@ -114,23 +118,22 @@ def compact_slots(saves_dir: Path, rom: str) -> int:
     return len(found)
 
 
-def _fresh_reset_states(
-    saves_dir: Path, rom: str, now_ns: int | None
-) -> list[tuple[int, int, Path]]:
-    """Return non-empty overflow ``.st4..9`` states, or ``.st0..3`` written in the last 10s."""
-    overflow: list[tuple[int, int, Path]] = []
-    for slot in range(USER_SLOTS, SLOT_COUNT):
+def _fresh_reset_states(saves_dir: Path, rom: str, since_ns: int) -> list[tuple[int, int, Path]]:
+    """Return the non-empty ``.st0..9`` states written since the Reset press at ``since_ns``.
+
+    Age, not slot number, marks the new state: after a Start-resume ``.st9`` already holds the
+    resumed copy, so taking any overflow slot would stage that stale copy before mupen64plus has
+    flushed the new one (B3).
+    """
+    cutoff = since_ns - MTIME_SLACK_NS
+    fresh: list[tuple[int, int, Path]] = []
+    for slot in range(SLOT_COUNT):
         state = saves_dir / f"{rom}.st{slot}"
-        if state.is_file() and state.stat().st_size > 0:
-            overflow.append((state.stat().st_mtime_ns, slot, state))
-    if overflow:
-        return overflow
-    cutoff = (time.time_ns() if now_ns is None else now_ns) - 10_000_000_000
-    for slot in range(USER_SLOTS):
-        state = saves_dir / f"{rom}.st{slot}"
-        if state.is_file() and state.stat().st_size > 0 and state.stat().st_mtime_ns >= cutoff:
-            overflow.append((state.stat().st_mtime_ns, slot, state))
-    return overflow
+        if state.is_file():
+            info = state.stat()
+            if info.st_size > 0 and info.st_mtime_ns >= cutoff:
+                fresh.append((info.st_mtime_ns, slot, state))
+    return fresh
 
 
 def _stage_pending_shot(shot: Path, pending_shot: Path, fallback_shot: Path | None) -> None:
@@ -149,13 +152,13 @@ def stage_pending(
     saves_dir: Path,
     rom: str,
     *,
-    now_ns: int | None = None,
+    since_ns: int,
     fallback_shot: Path | None = None,
 ) -> bool:
-    """Stage the newly written Reset state as ``<rom>.pending`` without touching ``.st0..3``."""
+    """Stage the state written since the Reset press (``since_ns``) as ``<rom>.pending``."""
     if not rom or not saves_dir.is_dir():
         return False
-    overflow = _fresh_reset_states(saves_dir, rom, now_ns)
+    overflow = _fresh_reset_states(saves_dir, rom, since_ns)
     if not overflow:
         return False
     overflow.sort()
@@ -178,14 +181,14 @@ def wait_and_stage_pending(
     rom: str,
     fallback_shot: Path = RESET_SHOT,
     *,
-    attempts: int = 30,
+    since_ns: int,
     sleep_fn: Callable[[float], None] = time.sleep,
 ) -> bool:
     """Poll briefly after ``save_state`` until ``mupen64plus`` flushes a non-empty state."""
-    for attempt in range(max(1, attempts)):
-        if stage_pending(saves_dir, rom, fallback_shot=fallback_shot):
+    for attempt in range(STAGE_ATTEMPTS):
+        if stage_pending(saves_dir, rom, since_ns=since_ns, fallback_shot=fallback_shot):
             return True
-        if attempt + 1 < attempts:
+        if attempt + 1 < STAGE_ATTEMPTS:
             sleep_fn(0.05)
     return False
 
@@ -233,17 +236,28 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--mupen-cfg", type=Path, default=MUPEN_CFG)
     parser.add_argument("--fifo", type=Path, default=TOPBAR_FIFO)
     parser.add_argument("--shot", type=Path, default=RESET_SHOT)
+    parser.add_argument(
+        "--since-ns",
+        type=int,
+        help="when Reset was pressed, in ns since the epoch; stage and open need it",
+    )
     args = parser.parse_args(argv)
+    if args.action in ("stage", "open") and args.since_ns is None:
+        parser.error(f"{args.action} needs --since-ns")
     if args.action == "decide":
         sys.stdout.write(decide(Engine(), args.roms, args.selected) + "\n")
     elif args.action == "compact":
         compact_slots(args.saves, selected_rom(args.selected))
     elif args.action == "stage":
-        wait_and_stage_pending(args.saves, selected_rom(args.selected), args.shot)
+        wait_and_stage_pending(
+            args.saves, selected_rom(args.selected), args.shot, since_ns=args.since_ns
+        )
     elif args.action == "open":
         with contextlib.suppress(EngineError, OSError, TimeoutError):
             wait_for_launch_to_end(Engine().game_running)
-        stage_pending(args.saves, selected_rom(args.selected), fallback_shot=args.shot)
+        stage_pending(
+            args.saves, selected_rom(args.selected), since_ns=args.since_ns, fallback_shot=args.shot
+        )
         args.shot.unlink(missing_ok=True)
         pin_mupen_slot(args.mupen_cfg)
         notify_suspend_drawer(args.fifo)
