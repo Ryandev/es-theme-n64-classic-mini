@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import subprocess
 from typing import TYPE_CHECKING
 
 from lxml import etree
@@ -347,8 +348,13 @@ def test_the_brand_mark_is_its_own_layer_the_bundle_can_swap() -> None:
     assert path == "./art/brand.png"
     run = (N64_THEME.parents[2] / "frontend" / "run").read_text()
     assert 'cp "$REPO_ROOT/local/brand.png" "$out/theme/art/brand.png"' in run
-    ignored = (N64_THEME.parents[2] / ".gitignore").read_text().splitlines()
-    assert "local/" in ignored
+    # Ignored whether local is a folder, the private workspace's symlink to one, or absent.
+    check = subprocess.run(
+        ["git", "check-ignore", "-q", "--no-index", "local"],
+        cwd=N64_THEME.parents[2],
+        check=False,
+    )
+    assert check.returncode == 0, "local is not git-ignored"
 
 
 def test_help_prompts_sit_above_the_bottom_bar() -> None:

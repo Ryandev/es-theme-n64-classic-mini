@@ -1,9 +1,9 @@
 # Local-only research material (third-party screenshots, cloned themes).
 # Separate from this repo; the tooling never requires it.
-docs/references/
+/docs/references
 
 # The owner's game files: copyrighted, never committed or published. Tools read them locally.
-N64/
+/N64
 
 # Generated harness output and the live ES sandbox
 test_harness/screenshots/
@@ -41,8 +41,9 @@ Thumbs.db
 .import_linter_cache/
 .review/
 
-# DEC-5: the owner's own brand mark (local/brand.png, 220x70), used by frontend/run bundle.
-local/
+# DEC-5: the owner's own overrides (local/: brand, music, splash...), used by frontend/run bundle.
+# No trailing slash, so a symlink named local (the private workspace's) is ignored too.
+/local
 
 # CAD & Music generated exports, gate dependency cache, and FreeCAD working files
 music/export/

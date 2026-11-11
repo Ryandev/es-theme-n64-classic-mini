@@ -12,6 +12,9 @@ set -euo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
+# Git runs hooks with GIT_DIR/GIT_INDEX_FILE set (in a submodule, to its .git/modules/ path). The
+# gate's own git calls, and the tests' throwaway repos, would inherit them and use the wrong repo.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_PREFIX GIT_OBJECT_DIRECTORY
 
 GATE_PATHS='^(frontend/|themes/|\.githooks/|\.github/|\.agents/|\.secrets\.baseline|\.gitignore)'
 STAGED="$(git diff --cached --name-only)"
