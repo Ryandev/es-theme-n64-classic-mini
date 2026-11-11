@@ -4,17 +4,16 @@ from __future__ import annotations
 
 import json
 import os
-from typing import TYPE_CHECKING, override
+import subprocess
+import time
+from pathlib import Path
+from typing import override
 
 import pytest
 
 from n64mini.console import reset as rs
 from n64mini.console.engine import Engine, EngineError
 from n64mini.console.flip import BADGE_DIR, MODES_FILE
-
-if TYPE_CHECKING:
-    from pathlib import Path
-
 
 PRESS = 30_000_000_000  # when Reset was pressed, in ns
 
@@ -148,7 +147,7 @@ def test_cli_decide_compact_and_finish(
     (saves / f"{rom}.st3").write_bytes(b"state2")
     assert rs.main(["finish", *common]) == 0
     assert (saves / f"{rom}.st1").read_bytes() == b"state2"
-    assert "CurrentStateSlot = 8" in cfg.read_text(encoding="utf-8")
+    assert "CurrentStateSlot = 9" in cfg.read_text(encoding="utf-8")
 
 
 def test_stage_pending_stages_overflow_or_recent_slot_without_touching_saved_slots(
@@ -326,3 +325,49 @@ def test_notify_suspend_drawer_and_cli_stage_open(
         assert os.read(rfd2, 64) == b"suspend\n"
     finally:
         os.close(rfd2)
+
+
+def test_the_reset_command_returns_before_it_sends_keys_through_hotkeygen(tmp_path: Path) -> None:
+    # hotkeygen runs the command with os.system and reads no keys until it returns, including the
+    # save_state and exit keys the command sends through it. Found on the VM: nothing was saved,
+    # the game never quit, and `open` waited forever. The fake hotkeygen blocks the same way until
+    # released, so a command that doesn't detach times out here.
+    calls = tmp_path / "calls.log"
+    release = tmp_path / "release"
+    shim = tmp_path / "bin"
+    shim.mkdir()
+    scripts = {
+        "python3": (
+            'case "$*" in *decide*) echo emulator ;; *time_ns*) echo 1 ;;'
+            ' *) echo "py $*" >> "{log}" ;; esac'
+        ),
+        "hotkeygen": 'while [ ! -f "{release}" ]; do sleep 0.05; done; echo "key $*" >> "{log}"',
+        "batocera-screenshot": "exit 0",
+    }
+    for name, body in scripts.items():
+        tool = shim / name
+        tool.write_text("#!/bin/sh\n" + body.format(log=calls, release=release) + "\n")
+        tool.chmod(0o755)
+    env = {
+        **os.environ,
+        "PATH": f"{shim}:{os.environ['PATH']}",
+        "N64MINI_RESET_LOG": str(tmp_path / "reset.log"),
+    }
+    script = Path(rs.__file__).parent / "data" / "n64mini-reset.sh"
+
+    expected = [
+        ["key", "--send", "save_state"],
+        ["py", "-m", "n64mini.console.reset"],
+        ["key", "--send", "exit"],
+        ["py", "-m", "n64mini.console.reset"],
+    ]
+    subprocess.run(["bash", str(script)], env=env, check=True, timeout=5)
+    release.touch()
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline and _lines(calls) < len(expected):
+        time.sleep(0.05)
+    assert [line.split()[:3] for line in calls.read_text().splitlines()] == expected
+
+
+def _lines(path: Path) -> int:
+    return len(path.read_text().splitlines()) if path.exists() else 0

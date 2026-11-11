@@ -46,16 +46,26 @@ def _args(roms: Path) -> list[str]:
     return ["-system", "n64", "-rom", str(roms / PORTED), "-emulator", "libretro"]
 
 
-def test_an_unflipped_game_goes_to_emulatorlauncher_unchanged(
+def test_an_unflipped_game_goes_to_emulatorlauncher_with_saves_pinned_to_slot_9(
     console: tuple[Path, Path, Path],
 ) -> None:
+    # B5: without the pin mupen64plus saves into the slot it last used, a player's .st0..3
+    # included (seen on the VM: the first Reset wrote .st2).
     roms, catalog, ports = console
     decision = ln.decide(_args(roms), roms, ports, catalog)
     assert decision == {
         "mode": "emulator",
         "rom": PORTED,
-        "command": ["emulatorlauncher", *_args(roms)],
+        "command": ["emulatorlauncher", *_args(roms), "-state_slot", "9"],
     }
+    # The engine adds its own next free slot to a plain launch; that is replaced, not kept.
+    engine_slot = [*_args(roms), "-state_slot", "2"]
+    assert ln.decide(engine_slot, roms, ports, catalog)["command"] == [
+        "emulatorlauncher",
+        *_args(roms),
+        "-state_slot",
+        "9",
+    ]
 
 
 def test_a_flipped_game_runs_its_installed_port(console: tuple[Path, Path, Path]) -> None:
@@ -134,7 +144,12 @@ def test_main_prints_the_command_or_records_it(
 ) -> None:
     roms, _, _ = console
     assert ln.main(_args(roms)) == 0
-    assert capsys.readouterr().out.split("\0")[:-1] == ["emulatorlauncher", *_args(roms)]
+    assert capsys.readouterr().out.split("\0")[:-1] == [
+        "emulatorlauncher",
+        *_args(roms),
+        "-state_slot",
+        "9",
+    ]
     log = tmp_path / "launches.jsonl"
     ports = tmp_path / "ports.json"
     assert ln.main(["--ports", str(ports), "--dry-run", str(log), *_args(roms)]) == 0
@@ -161,7 +176,7 @@ def test_a_windows_rom_path_maps_to_its_folder_under_wsl() -> None:
 def test_the_shell_wrapper_execs_exactly_the_chosen_command(
     console: tuple[Path, Path, Path], tmp_path: Path
 ) -> None:
-    """End to end: the script hands emulatorlauncher the very arguments Batocera gave it."""
+    """End to end: emulatorlauncher gets Batocera's arguments plus the save-slot pin."""
     roms, _, _ = console
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -179,7 +194,8 @@ def test_the_shell_wrapper_execs_exactly_the_chosen_command(
         timeout=30,
     )
     assert result.returncode == 0, result.stderr
-    assert received.read_bytes().split(b"\0")[:-1] == [a.encode() for a in _args(roms)]
+    sent = [*_args(roms), "-state_slot", "9"]
+    assert received.read_bytes().split(b"\0")[:-1] == [a.encode() for a in sent]
 
 
 def test_a_failure_with_no_engine_to_show_it_stays_in_the_log(
@@ -351,7 +367,7 @@ def test_sdl_canvas_and_animate_cli_entry_point(
 def test_consume_resume_args_and_decide_resume_slot(
     console: tuple[Path, Path, Path], tmp_path: Path
 ) -> None:
-    """AC-T13: launching a suspend slot passes -state_slot 8 -state_filename once and unlinks."""
+    """AC-T13: launching a suspend slot passes -state_slot 9 -state_filename once and unlinks."""
     roms, catalog, ports = console
     resume = tmp_path / "resume.json"
     assert ln.consume_resume_args(PORTED, resume) == []
@@ -378,19 +394,19 @@ def test_consume_resume_args_and_decide_resume_slot(
         "emulatorlauncher",
         *_args(roms),
         "-state_slot",
-        "8",
+        "9",
         "-state_filename",
         str(st1),
     ]
     assert not resume.exists()  # one-shot consumption
 
-    # Pending floating state (slot=None) also pins -state_slot 8 and passes -state_filename.
+    # Pending floating state (slot=None) also pins -state_slot 9 and passes -state_filename.
     resume.write_text(
         json.dumps({"rom": PORTED, "slot": None, "state_file": str(st1)}), encoding="utf-8"
     )
     assert ln.consume_resume_args(PORTED, resume) == [
         "-state_slot",
-        "8",
+        "9",
         "-state_filename",
         str(st1),
     ]
@@ -401,5 +417,5 @@ def test_consume_resume_args_and_decide_resume_slot(
     )
     explicit = [*_args(roms), "-state_filename", "/explicit/state.st0"]
     dec_explicit = ln.decide(explicit, roms, ports, catalog, resume_file=resume)
-    assert dec_explicit["command"] == ["emulatorlauncher", *explicit]
+    assert dec_explicit["command"] == ["emulatorlauncher", *explicit, "-state_slot", "9"]
     assert resume.is_file()

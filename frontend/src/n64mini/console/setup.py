@@ -459,6 +459,8 @@ def _build(comp: Component, bundle: Path, new: Path, userdata: Path, opts: Optio
             conf,
             {
                 f"{comp.only_system}.bezel": "none",
+                # Saves always go to .st9 (reset.WRITE_SLOT); incrementing would wrap into .st0.
+                f"{comp.only_system}.incrementalsavestates": "0",
                 "splash.screen.enabled": "1",
                 "splash.screen.subtitle": "0",
                 "es.customsargs": "--no-splash",

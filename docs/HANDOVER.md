@@ -146,9 +146,10 @@ The owner's design (`highlight_1.png`), modelled on the NES/SNES Classic menu:
   - In Pending Save mode, the wingless cyan floating `NUS-006` cartridge hovers slowly up and down
     with a cartridge-width yellow `[C-Down] Save` bar (`C-Down` drops it into the slot and plays
     `sounds/suspend_save.wav`; `B` discards it with radial cartoon smoke puffs and plays
-    `sounds/suspend_poof.wav`). Launching a slot (`A` or `Start`) passes `-state_slot 8
-    -state_filename <path>` via `launch.py` so `mupen64plus` restores `--savestate <path>` without
-    clobbering `.st0..3` on a later Reset.
+    `sounds/suspend_poof.wav`). Launching a slot (`A` or `Start`) passes `-state_slot 9
+    -state_filename <path>` via `launch.py` so `mupen64plus` restores `--savestate <path>`. Every
+    launch pins `-state_slot 9` and setup sets `n64.incrementalsavestates=0`, so no save (Reset or
+    in-game hotkey) ever lands in `.st0..3`.
 
 ## CAD enclosure workspace (`cad/`)
 

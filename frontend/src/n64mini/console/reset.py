@@ -15,9 +15,11 @@ testable standard-library Python without subprocesses:
   ``<rom>.st<slot>.png``), renumbers the game's ``.st0..9`` files in chronological order starting
   at ``.st0`` so the card's four suspend-point circles (``slot0saved``..``slot3saved``, AC-T09)
   fill from slot 0 without gaps.
-- ``finish``: after the emulator exits, pins ``CurrentStateSlot = 8`` in ``mupen64plus.cfg`` so
-  the next launch with ``AutoStateSlotIncrement = True`` increments ``8 -> 9`` and never overwrites
-  an existing ``.st0..7`` slot.
+- ``finish``: after the emulator exits, pins ``CurrentStateSlot = 9`` in ``mupen64plus.cfg``.
+
+Every save mupen64plus makes goes to ``.st9`` (``WRITE_SLOT``): each launch passes
+``-state_slot 9`` and setup turns ``n64.incrementalsavestates`` off, so no save, Reset or an
+in-game hotkey, can land in (or wrap round into) the player's ``.st0..3``.
 
 Runs on the console, so it uses only the standard library.
 """
@@ -47,7 +49,7 @@ TOPBAR_FIFO: Final = Path("/var/run/n64mini-topbar.cmd")
 RESET_SHOT: Final = Path(tempfile.gettempdir()) / "n64mini-reset-shot.png"
 SLOT_COUNT: Final = 10
 USER_SLOTS: Final = 4
-NEXT_WRITE_SLOT: Final = 8  # AutoStateSlotIncrement increments 8 -> 9 before writing
+WRITE_SLOT: Final = 9  # see the module docstring: every mupen64plus save goes here
 STAGE_ATTEMPTS: Final = 30  # 50 ms apart: mupen64plus gets 1.5 s to flush the state
 # File times can trail the clock: the kernel stamps them from a coarse clock, and FAT keeps only
 # 2 s. A resumed copy is written before the game boots, so it is always older than this.
@@ -210,7 +212,7 @@ def notify_suspend_drawer(fifo: Path = TOPBAR_FIFO) -> bool:
     return True
 
 
-def pin_mupen_slot(cfg: Path = MUPEN_CFG, slot: int = NEXT_WRITE_SLOT) -> bool:
+def pin_mupen_slot(cfg: Path = MUPEN_CFG, slot: int = WRITE_SLOT) -> bool:
     """Set ``CurrentStateSlot = <slot>`` in ``mupen64plus.cfg`` if present."""
     if not cfg.is_file():
         return False

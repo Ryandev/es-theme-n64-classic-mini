@@ -43,9 +43,10 @@ shutdown).
   maps `"KEY_F13": "n64mini-reset"`.
 - `bundle/console/hotkeygen-common_context.conf` (`/userdata/system/configs/hotkeygen/common_context.conf`)
   maps `"n64mini-reset"` to `/userdata/system/n64mini/python/n64mini/console/data/n64mini-reset.sh`.
-- When a game is running in **Emulator** mode, `n64mini-reset.sh` runs `hotkeygen --send save_state`
-  (saving `<rom>.st<slot>` and `<rom>.st<slot>.png`), stages `<rom>.pending`, exits the emulator
-  (`hotkeygen --send exit`), pins `CurrentStateSlot = 8` in `mupen64plus.cfg` so the next session
-  never overwrites an existing slot, and opens the `Suspend Point List` in Pending Save mode.
+- When a game is running in **Emulator** mode, `n64mini-reset.sh` hands off to a detached copy of
+  itself (hotkeygen runs it with `os.system` and reads no keys until it returns), which runs
+  `hotkeygen --send save_state` (saving `<rom>.st9` and `<rom>.st9.png`), stages `<rom>.pending`,
+  exits the emulator (`hotkeygen --send exit`) and opens the `Suspend Point List` in Pending Save
+  mode.
 - When a game is running in **Port** mode, `n64mini-reset.sh` exits the port cleanly.
 - When no game is running (in the carousel), pressing Reset does nothing.

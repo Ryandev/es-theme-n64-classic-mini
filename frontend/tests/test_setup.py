@@ -838,6 +838,7 @@ def test_settings_merge_into_the_engines_file_and_hide_other_systems(
     )
     assert (userdata / "system/batocera.conf").read_text() == (
         "n64.bezel=none\n"
+        "n64.incrementalsavestates=0\n"
         "splash.screen.enabled=1\n"
         "splash.screen.subtitle=0\n"
         "es.customsargs=--no-splash\n"

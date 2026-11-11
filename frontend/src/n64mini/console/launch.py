@@ -38,7 +38,7 @@ from PIL import Image
 
 from n64mini.console.engine import Engine, EngineError
 from n64mini.console.flip import PORTS_FILE, FlipError, load_modes, load_ports
-from n64mini.console.reset import NEXT_WRITE_SLOT
+from n64mini.console.reset import WRITE_SLOT
 from n64mini.console.showcase import (
     CARD,
     CATALOG,
@@ -393,8 +393,7 @@ def consume_resume_args(rom_name: str, resume_file: Path = RESUME_FILE) -> list[
     Batocera 43.1's ``emulatorlauncher`` parses ``-state_slot`` and ``-state_filename``:
     ``mupenGenerator.py`` passes ``--savestate <state_filename>`` to ``mupen64plus`` while
     ``mupenConfig.py`` writes ``CurrentStateSlot = <state_slot>`` into ``mupen64plus.cfg``.
-    Pinning ``-state_slot 8`` (``NEXT_WRITE_SLOT``) ensures a subsequent Reset press increments
-    ``8 -> 9`` rather than overwriting any saved ``.st0..3`` slot.
+    The ``-state_slot`` is ``WRITE_SLOT``, as on every emulator launch (``decide``).
     """
     if not resume_file.is_file():
         return []
@@ -414,7 +413,21 @@ def consume_resume_args(rom_name: str, resume_file: Path = RESUME_FILE) -> list[
     state_file = entries.get("state_file")
     if not isinstance(state_file, str) or not Path(state_file).is_file():
         return []
-    return ["-state_slot", str(NEXT_WRITE_SLOT), "-state_filename", state_file]
+    return ["-state_slot", str(WRITE_SLOT), "-state_filename", state_file]
+
+
+def _without_state_slot(args: Sequence[str]) -> list[str]:
+    """``args`` with any ``-state_slot N`` pair removed."""
+    out: list[str] = []
+    skip = False
+    for arg in args:
+        if skip:
+            skip = False
+        elif arg == "-state_slot":
+            skip = True
+        else:
+            out.append(arg)
+    return out
 
 
 def decide(
@@ -436,7 +449,13 @@ def decide(
         return {"mode": "library", "rom": name, "command": detached}
     if load_modes(roms_dir).get(name) != "port":
         extra = [] if "-state_filename" in args else consume_resume_args(name, resume_file)
-        return {"mode": "emulator", "rom": name, "command": [EMULATORLAUNCHER, *args, *extra]}
+        # Every save goes to WRITE_SLOT. Without the pin mupen64plus saves into the slot it last
+        # used, a player's .st0..3 included (B5), and the engine adds its own next free slot to a
+        # plain launch when incremental saves are on (SaveState::setupSaveState), so replace it.
+        emulator = [EMULATORLAUNCHER, *_without_state_slot(args), *extra]
+        if "-state_slot" not in extra:
+            emulator += ["-state_slot", str(WRITE_SLOT)]
+        return {"mode": "emulator", "rom": name, "command": emulator}
     game = next((g for g in load_catalog(catalog) if g.rom.search(name)), None)
     if game is None:
         raise LaunchError(f"{name} is flipped to Port but isn't in the catalogue")
