@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<theme>
+  <formatVersion>7</formatVersion>
+  <!-- AC-T17: Splash::Splash (es-core/src/Splash.cpp) reads <theme>/gamesplash.xml on game launch
+       instead of the engine's built-in :/gamesplash.xml (which shows the game's screenshot and
+       title). Splash is not a GuiComponent and has no update(int deltaTime) method, so a
+       <storyboard> here freezes at t=0. Instead, gamesplash.xml holds the carousel backdrop and
+       the selected game's centre card (bound via Splash.cpp:200-212) during the ~100 ms hand-off
+       so the screen never flashes the N64 boot logo before n64mini.console.launch opens its SDL2
+       window to flip the card, expand it with cubic ease-out, and cross-fade into the N64 boot
+       frame (art/launch_splash.png). -->
+  <view name="splash">
+    <splash name="splash">
+      <backgroundColor>000000FF</backgroundColor>
+    </splash>
+    <image name="background">
+      <pos>0.5 0.5</pos>
+      <origin>0.5 0.5</origin>
+      <maxSize>1 1</maxSize>
+      <roundCorners>0</roundCorners>
+      <path>./art/launch_splash.png</path>
+    </image>
+    <image name="stage" extra="true">
+      <pos>0 0</pos>
+      <origin>0 0</origin>
+      <size>1 1</size>
+      <path>./art/n64_classic_bg.png</path>
+      <zIndex>6</zIndex>
+    </image>
+    <image name="brand" extra="true">
+      <pos>0.5 0.06389</pos>
+      <origin>0.5 0.5</origin>
+      <size>0.9375 0.11389</size>
+      <path>./art/brand.png</path>
+      <zIndex>7</zIndex>
+    </image>
+    <image name="console" extra="true">
+      <pos>0.5 0.93889</pos>
+      <origin>0.5 0.5</origin>
+      <size>0.9375 0.11389</size>
+      <path>./art/console.png</path>
+      <zIndex>7</zIndex>
+    </image>
+    <image name="cardframe" extra="true">
+      <pos>0.5 0.42222</pos>
+      <origin>0.5 0.5</origin>
+      <size>0.1828125 0.37222</size>
+      <path>./art/tile_selected.png</path>
+      <zIndex>8</zIndex>
+    </image>
+    <image name="cardart" extra="true">
+      <pos>0.5 0.39167</pos>
+      <origin>0.5 0.5</origin>
+      <size>0.15703 0.26806</size>
+      <path>empty({game:thumbnail}) ? {game:image} : {game:thumbnail}</path>
+      <zIndex>9</zIndex>
+    </image>
+    <text name="label">
+      <visible>false</visible>
+      <color>00000000</color>
+      <pos>2 2</pos>
+      <size>0 0</size>
+    </text>
+  </view>
+</theme>

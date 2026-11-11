@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="348" height="230" viewBox="0 0 348 230">
+  <!-- NUS-006 outer shell rim, smooth body, and top arch highlight -->
+  <path fill="#1c1f26" d="M 8 38 Q 174 -12 340 38 Q 345 40 345 46 L 345 222 Q 345 227 340 227 L 8 227 Q 3 227 3 222 L 3 46 Q 3 40 8 38 Z"/>
+  <path fill="#8b909a" d="M 10 40 Q 174 -9 338 40 Q 342 42 342 46 L 342 221 Q 342 224 338 224 L 10 224 Q 6 224 6 221 L 6 46 Q 6 42 10 40 Z"/>
+  <path fill="#b8beca" d="M 10 40 Q 174 -9 338 40 Q 341 41 342 45 Q 174 -3 6 45 Q 7 41 10 40 Z"/>
+  <!-- Smooth outer flank curvature shading and lower corner bevel steps -->
+  <path fill="#767b86" d="M 6 46 L 22 41 L 22 224 L 10 224 Q 6 224 6 221 Z"/>
+  <path fill="#767b86" d="M 326 41 L 342 46 L 342 221 Q 342 224 338 224 L 326 224 Z"/>
+  <path fill="#50545e" d="M 6 156 L 27 170 Q 29 172 29 175 L 29 224 L 10 224 Q 6 224 6 221 Z"/>
+  <path fill="#b6bcc8" d="M 6 154 L 28 168 L 27 171 L 6 157 Z"/>
+  <path fill="#747984" d="M 8 159 L 26 171 L 26 222 L 8 222 Z"/>
+  <path fill="#50545e" d="M 342 156 L 321 170 Q 319 172 319 175 L 319 224 L 338 224 Q 342 224 342 221 Z"/>
+  <path fill="#b6bcc8" d="M 342 154 L 320 168 L 321 171 L 342 157 Z"/>
+  <path fill="#747984" d="M 340 159 L 322 171 L 322 222 L 340 222 Z"/>
+  <!-- Full-height vertical NUS-006 seam grooves -->
+  <path fill="#32363e" d="M 68 28 L 71 27 L 71 224 L 68 224 Z"/>
+  <path fill="#b4bac6" d="M 71 27 L 73 27 L 73 224 L 71 224 Z"/>
+  <path fill="#32363e" d="M 277 27 L 280 28 L 280 224 L 277 224 Z"/>
+  <path fill="#b4bac6" d="M 275 27 L 277 27 L 277 224 L 275 224 Z"/>
+  <!-- Arch-topped recessed central label pocket -->
+  <path fill="#4e525c" d="M 90 26 Q 174 7 258 26 Q 265 28 265 35 L 265 198 Q 265 205 258 205 L 90 205 Q 83 205 83 198 L 83 35 Q 83 28 90 26 Z"/>
+  <path fill="#646975" d="M 91 29 Q 174 10 257 29 Q 263 31 263 37 L 263 197 Q 263 203 257 203 L 91 203 Q 85 203 85 197 L 85 37 Q 85 31 91 29 Z"/>
+  <path fill="#0a0c10" d="M 92 31 Q 174 12 256 31 Q 261 33 261 38 L 261 196 Q 261 201 256 201 L 92 201 Q 87 201 87 196 L 87 38 Q 87 33 92 31 Z"/>
+</svg>

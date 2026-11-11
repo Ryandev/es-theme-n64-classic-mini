@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<theme>
+  <formatVersion>7</formatVersion>
+  <!-- AC-T10: N64's logo in the system view: an original plate, generated with the other art. -->
+  <view name="system">
+    <image name="logo">
+      <path>./../art/system-n64.png</path>
+    </image>
+  </view>
+</theme>

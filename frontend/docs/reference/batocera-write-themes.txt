@@ -1,0 +1,40 @@
+====== Write Themes For EmulationStation ======
+
+Batocera offers many options for EmulationStation theming. A lot of features have been added to Batocera 5.24, and a lot new more are added in Batocera 29th release (BATOCERA 29 below).
+
+<WRAP center round tip>
+A quick link to the technical documentation: [[https://github.com/batocera-linux/batocera-emulationstation/blob/master/THEMES.md]].
+</WRAP>
+
+If you'd like to work with Batocera's Carbon theme, feel free to download it from [[https://github.com/fabricecaruso/es-theme-carbon]] (click the green "Code" button and download as a ZIP).
+
+If new to theme development and you want to take a look at how a simpler, easier to understand theme works, take a look at the following:
+  * https://github.com/fabricecaruso/es-theme-minimal (originally based on [[https://github.com/lilbud/es-theme-minimal]])
+  * https://github.com/DarrenCarol/Immersive
+  * https://github.com/RetroPie/es-theme-simple
+  * https://github.com/DarrenCarol/Simple_Life
+  * https://github.com/Riskeynewt356/SynthWave
+
+The rest of the recommended themes can be found at [[https://wiki.batocera.org/themes#batocera_themes_-_serverlist|on the themes wiki page]]. The current themes listed in the content downloader can be found [[https://updates.batocera.org/themes.txt|here]]
+
+<WRAP center round tip>
+When creating themes, it's recommended to keep their total space down so that weaker hardware (such as the RPi) can hold everything within their small VRAM successfully.
+
+Tools that can be used to compress image data can be found at [[https://imageoptim.com/versions.html|ImageOptim's alternatives page]], and for PNGs specifically [[https://pngquant.org/|PNGQuant]] be used to compress it ([[https://pnggauntlet.com|PNGGauntlet]] can also be used (use 96% compression to not lose any quality)).
+</WRAP>
+
+<WRAP center round important>
+The gamesplash feature is only supported on x86_64 due to the video drivers on other devices not supporting shared mode. This may change in the future.
+</WRAP>
+
+===== Technical documentation =====
+
+The latest documentation can be found here: [[https://github.com/batocera-linux/batocera-emulationstation/blob/master/THEMES.md]].
+
+If there is something not covered by the readme, looking at [[https://github.com/batocera-linux/batocera-emulationstation/blob/master/es-core/src/ThemeData.cpp|the source code directly]] can help.
+
+===== Show all systems =====
+
+If you are creating per-system logos and would like to see what all systems look like in your theme on a live install without having to actually have ROMs in each system's folder, simply go to **MAIN MENU** -> **GAME COLLECTION SETTINGS** -> **SHOW EMPTY SYSTEMS**
+
+{{:screenshot-2022.06.21-11h18.48.png?600|Before.}} {{:screenshot-2022.06.21-11h19.00.png?600|Enable "SHOW EMPTY SYSTEMS".}} {{:screenshot-2022.06.21-11h19.08.png?600|After.}}

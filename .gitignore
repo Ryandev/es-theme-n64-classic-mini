@@ -1,0 +1,54 @@
+# Local-only research material (third-party screenshots, cloned themes).
+# Separate from this repo; the tooling never requires it.
+docs/references/
+
+# The owner's game files: copyrighted, never committed or published. Tools read them locally.
+N64/
+
+# Generated harness output and the live ES sandbox
+test_harness/screenshots/
+test_harness/live/
+# The Batocera VM (AC-S08): the image, disks and snapshots. Large, and rebuilt from scripts.
+test_harness/vm/
+# Built tools for the console bundle (Torch, per pinned commit): rebuilt by `frontend/run bundle`.
+test_harness/build/
+
+# Python tooling
+.venv/
+__pycache__/
+*.py[cod]
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.hypothesis/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+mutants/
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Secrets
+.env
+.env.*
+.coverage.json
+.import_linter_cache/
+.review/
+
+# DEC-5: the owner's own brand mark (local/brand.png, 220x70), used by frontend/run bundle.
+local/
+
+# CAD & Music generated exports, gate dependency cache, and FreeCAD working files
+music/export/
+cad/export/
+cad/scratch/
+cad/.ocp_vscode/
+cad/lib/step/*.step
+cad/lib/testing/last_run_report.json
+*.FCStd*

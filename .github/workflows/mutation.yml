@@ -1,0 +1,36 @@
+name: mutation
+
+# Too slow for every push (~25 min on a 4-core runner); weekly + on demand.
+on:
+  schedule:
+    - cron: "0 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mutmut:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: frontend/uv.lock
+      - run: uv sync --locked
+      - name: Mutation score must not drop below the committed baseline
+        run: ./run mutate --check-only
+      - name: Surviving mutants
+        if: always()
+        run: uv run mutmut results > survivors.txt || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mutmut-survivors
+          path: frontend/survivors.txt

@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<theme>
+  <formatVersion>7</formatVersion>
+  <!-- AC-S09 / AC-T17: Splash::Splash (es-core/src/Splash.cpp:25-35) reads <theme>/splash.xml
+       whenever fullScreenBackGround is true (startup, reload, shutdown), replacing the built-in
+       :/splash.xml (Batocera logo and red loading bar). Combined with es.customsargs in
+       batocera.conf, no Batocera logo, progress bar, or loading text ever appears. -->
+  <view name="splash">
+    <splash name="splash">
+      <backgroundColor>000000FF</backgroundColor>
+    </splash>
+    <image name="background">
+      <pos>0.5 0.5</pos>
+      <origin>0.5 0.5</origin>
+      <maxSize>1 1</maxSize>
+      <roundCorners>0</roundCorners>
+      <path>./art/launch_splash.png</path>
+    </image>
+    <image name="progressbar">
+      <visible>false</visible>
+      <color>00000000</color>
+      <colorEnd>00000000</colorEnd>
+      <pos>2 2</pos>
+      <size>0 0</size>
+    </image>
+    <image name="progressbar:active">
+      <visible>false</visible>
+      <color>00000000</color>
+      <colorEnd>00000000</colorEnd>
+      <pos>2 2</pos>
+      <size>0 0</size>
+    </image>
+    <text name="label">
+      <visible>false</visible>
+      <color>00000000</color>
+      <pos>2 2</pos>
+      <size>0 0</size>
+    </text>
+  </view>
+</theme>

@@ -1,0 +1,19 @@
+Upstream: the Batocera 43.1 x86_64 image (batocera-x86_64-43.1-20260529.img.gz, MD5
+0c365dc3c17b05a4b276c579168b01da), as run in the dev VM (`frontend/run vm`).
+Files: es_systems_n64.xml is the <system> entry named n64 in /usr/share/emulationstation/es_systems.cfg
+       (SHA-256 401638d6cbc26e574456f36a4b59007b823b576b35422f519640be9bfd3efc23), copied verbatim
+       on 2026-11-06. Batocera generates that file at build time, so it isn't in the ES repository.
+       S31emulationstation is /etc/init.d/S31emulationstation and emulationstation-standalone is
+       /usr/bin/emulationstation-standalone from the same image, copied verbatim on 2026-11-06:
+       Batocera's start/stop/suspend/resume of the engine and its launch loop.
+       es_savestates.cfg is /usr/share/emulationstation/es_savestates.cfg (SHA-256
+       6eae08aa339ce99e1ffa1be74261a141597440b63d3ea89c8e1ffe45d7f556c0), copied verbatim on
+       2026-11-06: where each emulator's save states are and how they're named (AC-T09).
+       configgen-defaults-n64.yml is lines 1-14 and 452-454 of /usr/share/batocera/configgen/
+       configgen-defaults.yml, copied verbatim on 2026-11-06: default bezel and N64's default emulator.
+       S00bootcustom, S03system-splash, S28splash and S30splashscreencontrol are from /etc/init.d/
+       of the same image, copied verbatim on 2026-11-08: early-boot custom hook, framebuffer boot
+       logo, mpv startup video (/userdata/splash/*.mp4) and autoplay splash control (AC-S09).
+Licence: COPYING is batocera.linux's own (raw.githubusercontent.com/batocera-linux/batocera.linux/
+       master/COPYING, fetched 2026-11-11): LGPL-3.0-or-later except where a file says otherwise.
+       These copies are test references only; nothing in this folder ships in the theme or bundle.

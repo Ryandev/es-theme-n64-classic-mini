@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Tracked in the repo (unlike .git/hooks/), so it survives a fresh clone.
+# Activate once per clone:   git config core.hooksPath .githooks
+#
+# Runs `frontend/run check`, the same gate CI runs. The coverage ratchet may
+# tighten frontend/.quality_baseline.json; if it does, the new baseline is
+# added to this commit so the gain is locked in.
+#
+# Path-gated: a commit touching only docs/ or the README skips the gate.
+# N64MINI_SKIP_GATE=1 forces a skip; use it for a WIP commit and say so in the message.
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+GATE_PATHS='^(frontend/|themes/|\.githooks/|\.github/|\.agents/|\.secrets\.baseline|\.gitignore)'
+STAGED="$(git diff --cached --name-only)"
+
+if [ "${N64MINI_SKIP_GATE:-0}" = "1" ]; then
+    echo "pre-commit: gate SKIPPED by N64MINI_SKIP_GATE=1 -- say why in the message."
+    exit 0
+fi
+if ! printf '%s\n' "$STAGED" | grep -qE "$GATE_PATHS"; then
+    echo "pre-commit: gate not run (docs-only commit)."
+    exit 0
+fi
+
+frontend/run check
+git add frontend/.quality_baseline.json

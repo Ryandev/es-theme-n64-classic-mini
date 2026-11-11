@@ -1,0 +1,538 @@
+#!/usr/bin/env bash
+# Task runner for frontend/. `./run help` lists targets.
+# `./run check` is THE gate: the pre-commit hook and CI both run exactly this.
+set -euo pipefail
+
+cd "$(dirname "$0")"
+REPO_ROOT="$(cd .. && pwd)"
+# Files that legitimately hold hex digests: golden image hashes, the lockfile.
+SECRETS_EXCLUDE='(^|/)(tests/golden/.*\.json|uv\.lock)$'
+
+step() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
+abort() { printf 'run: %s\n' "$*" >&2; exit 1; }
+
+# ---- file sets -------------------------------------------------------------
+# A gate's strength is which files it opens, and that number is invisible in a
+# green log: a gate that checked nothing reports exactly what a gate that found
+# nothing reports. So every file-set gate takes its files from here (repo-wide,
+# from git, so a new file anywhere is covered) and refuses an empty set.
+# tests/test_gates.py pins what each set must contain.
+
+# Everything a commit could include: tracked + untracked-but-not-ignored. A tracked file deleted
+# in the working tree is left out: there is nothing to check, and passing its path to a tool
+# fails the gate on a file that will not be committed.
+candidates() {
+    (cd "$REPO_ROOT" && git ls-files --cached --others --exclude-standard \
+        | while IFS= read -r f; do [ -e "$f" ] && printf '%s\n' "$f"; done)
+}
+
+files_all() { candidates; }
+
+files_text() {  # prose and source for the spell checker (typos)
+    candidates | grep -vE '\.(png|jpe?g|ttf|glsl|mp4|wav)$' \
+        | grep -vE '^(frontend/vendor/|frontend/uv\.lock$|\.secrets\.baseline$|frontend/tests/golden/)'
+}
+
+files_shell() {  # *.sh plus extension-less scripts with a bash/sh shebang
+    local f
+    while IFS= read -r f; do
+        case "${f##*/}" in  # match on the basename: directories may contain dots
+            *.sh) printf '%s\n' "$f" ;;
+            *.*) ;;
+            *) head -n1 "$REPO_ROOT/$f" 2>/dev/null | grep -qE '^#!.*\b(ba)?sh\b' && printf '%s\n' "$f" ;;
+        esac
+    done < <(candidates | grep -v '^frontend/vendor/')  # upstream's scripts aren't ours to lint
+}
+
+# Run "$@" on the named set, from the repo root; abort if the set is empty.
+on_files() {
+    local kind="$1"; shift
+    local -a files
+    mapfile -t files < <("files_$kind")
+    [ "${#files[@]}" -gt 0 ] || abort "file set '$kind' matched nothing; the selector is wrong"
+    (cd "$REPO_ROOT" && "$@" "${files[@]}")
+}
+
+lint() {
+    step "ruff lint";       uv run ruff check .
+    step "suppressions (ratcheted: count may only fall, each needs a reason)"
+    uv run python tools/ratchet.py suppressions . "$@"
+    step "ruff format";     uv run ruff format --check .
+    step "import contracts"; uv run lint-imports
+    step "dependencies";    uv run deptry src
+    step "dead code";       uv run vulture src tools tests vulture_allowlist.py --min-confidence 60
+    step "spelling";        on_files text uv run --project frontend typos --config frontend/pyproject.toml
+    step "shellcheck";      on_files shell uv run --project frontend shellcheck
+}
+
+types() {
+    step "mypy --strict";   uv run mypy
+    step "pyright strict";  uv run pyright
+}
+
+test_() {
+    step "pytest + coverage (ratcheted)"
+    uv run pytest -q --cov --cov-report=term --cov-report=json:.coverage.json
+    uv run python tools/ratchet.py coverage .coverage.json "$@"
+}
+
+validate() {
+    step "theme validation"
+    uv run n64mini-validate-theme ../themes/n64-classic-mini --warnings-as-errors
+}
+
+secrets() {
+    step "secrets scan"
+    # Tracked + untracked-but-not-ignored files, i.e. everything a commit could include.
+    on_files all uv run --project frontend detect-secrets-hook --baseline .secrets.baseline \
+        --exclude-files "$SECRETS_EXCLUDE"
+}
+
+audit() {
+    step "dependency vulnerabilities (pip-audit)"
+    uv run pip-audit --skip-editable --progress-spinner off
+}
+
+mutate() {
+    step "mutation testing (mutmut, ratcheted) -- slow"
+    rm -rf mutants
+    uv run mutmut run --max-children "$(nproc)"
+    uv run mutmut export-cicd-stats
+    uv run python tools/ratchet.py mutation mutants/mutmut-cicd-stats.json "$@"
+}
+
+# The real EmulationStation (RetroBat Windows build, WSL2 only), for `engine` and `shot`.
+# - The engine can't use a \\wsl.localhost home (it mangles it to /wsl.localhost/...), so the
+#   sandbox home is copied to the Windows temp folder.
+# - `timeout` would only stop the WSL side and leave the Windows process running, so it's
+#   started via PowerShell to get its Windows PID, and that exact process is stopped (also on
+#   exit, via the trap).
+PS=/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe
+ENGINE_PID=""
+ENGINE_HOME=""
+
+engine_start() {
+    local src_bin="$REPO_ROOT/test_harness/live/bin"
+    [ -x "$src_bin/emulationstation.exe" ] || abort "no engine: run .agents/skills/batocera-theme-harness/scripts/setup_live_harness.sh"
+    [ -x "$PS" ] || abort "the engine harness needs WSL2 on Windows"
+    local win_temp; win_temp="$(wslpath "$("$PS" -NoProfile -Command '[IO.Path]::GetTempPath()' </dev/null | tr -d '\r')")"
+    local harness="${win_temp%/}/n64mini-harness"
+    ENGINE_HOME="$harness/home"
+    bash "$REPO_ROOT/.agents/skills/batocera-theme-harness/scripts/setup_live_harness.sh" >/dev/null
+    if [ "${SANDBOX_LIST:-full}" = showcase ]; then  # the console's own toggle, on the sandbox
+        uv run n64mini-showcase showcase --roms "$REPO_ROOT/test_harness/live/home/roms/n64" >/dev/null
+    fi
+    if [ -n "${SANDBOX_PORT:-}" ]; then  # pre-flip one game to Port, then badge from modes.json
+        local media="$REPO_ROOT/test_harness/live/home/roms/n64/media/n64mini"
+        python3 -c 'import json,sys; print(json.dumps({sys.argv[1]: "port"}))' "$SANDBOX_PORT" > "$media/modes.json"
+        uv run n64mini-flip --roms "$REPO_ROOT/test_harness/live/home/roms/n64" --ports "$REPO_ROOT/test_harness/live/ports.json" init --badges "$REPO_ROOT/themes/n64-classic-mini/art" >/dev/null
+    fi
+    rm -rf "$ENGINE_HOME" && mkdir -p "$harness" && cp -r "$REPO_ROOT/test_harness/live/home" "$ENGINE_HOME"
+    # Windows asks "do you want to run this?" for a program started from \\wsl.localhost (a
+    # network location), on every run. A copy on the local disk runs without the prompt; -u
+    # only copies what changed, so after the first run this is quick.
+    local bin="$harness/bin"
+    mkdir -p "$bin" && cp -ru "$src_bin/." "$bin/"
+    local exe home_win
+    exe="$(wslpath -w "$bin/emulationstation.exe")"
+    home_win="$(wslpath -w "$ENGINE_HOME")"
+    ENGINE_PID="$("$PS" -NoProfile -Command "(Start-Process -FilePath '$exe' -WorkingDirectory '$(wslpath -w "$bin")' -ArgumentList '--windowed','--resolution','1280','720','--no-splash','--debug','--home','\"$home_win\"' -PassThru).Id" </dev/null | tr -d '\r')"
+    [[ "$ENGINE_PID" =~ ^[0-9]+$ ]] || abort "the engine didn't start (got: $ENGINE_PID)"
+    trap engine_stop EXIT
+}
+
+engine_stop() {
+    [ -n "$ENGINE_PID" ] && /mnt/c/Windows/System32/taskkill.exe /PID "$ENGINE_PID" /F >/dev/null 2>&1 || true
+    ENGINE_PID=""
+}
+
+engine_log() {
+    [ -f "$ENGINE_HOME/.emulationstation/es_log.txt" ] || abort "the engine wrote no log (it failed to start)"
+    step "engine log, reduced"
+    uv run python tools/es_log.py "$ENGINE_HOME/.emulationstation/es_log.txt" "$@"
+}
+
+engine() {
+    # Run the engine on the theme for N seconds and reduce its log (tools/es_log.py).
+    local secs="${1:-25}"
+    [ $# -gt 0 ] && shift
+    step "engine: $secs s run of EmulationStation"
+    engine_start
+    sleep "$secs"
+    engine_stop
+    engine_log "$@"
+}
+
+shot() {
+    # Screenshot the running engine after the given inputs (n64mini-capture-live), then stop it.
+    local nav="${1:-}" out="${2:-$REPO_ROOT/test_harness/screenshots/engine_shot.png}"
+    SANDBOX_LIST="${3:-full}"
+    [[ "$SANDBOX_LIST" =~ ^(full|showcase)$ ]] || abort "list must be full or showcase, got: $SANDBOX_LIST"
+    step "shot: EmulationStation, inputs '${nav:-none}' -> $out"
+    engine_start
+    local tries=0
+    until "$PS" -NoProfile -Command "try { Invoke-WebRequest -UseBasicParsing -TimeoutSec 2 http://127.0.0.1:1234/ | Out-Null; exit 0 } catch { if (\$_.Exception.Response) { exit 0 } else { exit 1 } }" </dev/null >/dev/null 2>&1; do
+        tries=$((tries + 1))
+        [ "$tries" -lt 30 ] || abort "the engine's HTTP server never answered"
+        sleep 1
+    done
+    tries=0  # the HTTP server answers before the window has finished loading
+    until "$PS" -NoProfile -Command "\$p = Get-Process -Id $ENGINE_PID -ErrorAction Stop; if (\$p.Responding -and \$p.MainWindowHandle -ne 0) { exit 0 } else { exit 1 }" </dev/null >/dev/null 2>&1; do
+        tries=$((tries + 1))
+        [ "$tries" -lt 60 ] || abort "the engine's window never became responsive"
+        sleep 1
+    done
+    sleep 5  # let the first view finish its transition
+    uv run n64mini-capture-live --pid "$ENGINE_PID" --navigate "$nav" --out "$out" ${SHOT_FLIP:+--flip "$SHOT_FLIP"} ${SHOT_SETTLE:+--settle "$SHOT_SETTLE"}
+    engine_stop
+    engine_log
+}
+
+# ---- the console bundle (DEC-S1: what goes on the USB stick) ------------------------
+# bundle/ (the manifest, install.sh, console/ config files) plus what the manifest names that isn't
+# downloaded on the console: the theme, the console's Python, and Torch, built at the commit pinned as
+# tool:torch's version (no release has it).
+BUILD_DIR="$REPO_ROOT/test_harness/build"
+
+torch_build() {  # prints the path of a Torch binary built at commit $1 (cached per commit)
+    local sha="$1" src="$BUILD_DIR/torch-src" out="$BUILD_DIR/torch-$1"
+    [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || abort "tool:torch's version must be a full commit hash, got: $sha"
+    if [ ! -x "$out/torch" ]; then
+        [ -d "$src/.git" ] || git clone -q https://github.com/HarbourMasters/Torch "$src" >&2
+        git -C "$src" fetch -q origin "$sha" >&2
+        git -C "$src" -c advice.detachedHead=false checkout -q "$sha" >&2
+        git -C "$src" submodule update -q --init --recursive >&2
+        local log="$BUILD_DIR/torch-$sha.log"
+        { cmake -S "$src" -B "$src/build-$sha" -DCMAKE_BUILD_TYPE=Release \
+            && cmake --build "$src/build-$sha" -j"$(nproc)"; } >"$log" 2>&1 \
+            || abort "Torch didn't build; see $log"
+        mkdir -p "$out" && cp "$src/build-$sha/torch" "$out/torch"
+    fi
+    echo "$out/torch"
+}
+
+bundle() {
+    local out="${1:?usage: ./run bundle OUT_DIR}" manifest="$REPO_ROOT/bundle/n64mini.json"
+    [ ! -e "$out" ] || [ -z "$(ls -A "$out")" ] || abort "$out isn't empty"
+    local sha
+    sha="$(python3 -c 'import json,sys; print(next(c["version"] for c in json.load(open(sys.argv[1]))["components"] if c["name"] == "tool:torch"))' "$manifest")"
+    local torch; torch="$(torch_build "$sha")"
+    mkdir -p "$out/tools/torch" "$out/python/n64mini"
+    cp "$manifest" "$out/n64mini.json"
+    # The owner's ScreenScraper login (.env.agent, git-ignored) goes into this bundle's copy of the
+    # manifest only, as an es-settings component; never into the repo or the output.
+    if [ -f "$REPO_ROOT/.env.agent" ]; then
+        python3 - "$REPO_ROOT/.env.agent" "$out/n64mini.json" <<'PY'
+import json, sys
+env = dict(
+    line.split("=", 1) for line in open(sys.argv[1]).read().splitlines() if "=" in line
+)
+user, password = env.get("SCREENSCRAPER_USERNAME"), env.get("SCREENSCRAPER_PASSWORD")
+if user and password:
+    manifest = json.load(open(sys.argv[2]))
+    manifest["components"].append({
+        "name": "scraper-login", "kind": "es-settings", "version": "content",
+        "settings": {"ScreenScraperUser": user, "ScreenScraperPass": password},
+        "only_system": "n64", "restart_engine": True,
+    })
+    json.dump(manifest, open(sys.argv[2], "w"), indent=1)
+    print("bundle: ScreenScraper login from .env.agent", file=sys.stderr)
+PY
+    fi
+    cp -r "$REPO_ROOT/bundle/install.sh" "$REPO_ROOT/bundle/update.sh" "$REPO_ROOT/bundle/console" "$out/"
+    cp -r "$REPO_ROOT/themes/n64-classic-mini" "$out/theme"
+    if [ -f "$REPO_ROOT/local/brand.png" ]; then  # DEC-5: the owner's own mark, never committed
+        cp "$REPO_ROOT/local/brand.png" "$out/theme/art/brand.png"
+        echo "bundle: brand from local/brand.png" >&2
+    fi
+    if [ -f "$REPO_ROOT/local/console.png" ]; then  # AC-T21: the owner's own console picture
+        cp "$REPO_ROOT/local/console.png" "$out/theme/art/console.png"
+        echo "bundle: console from local/console.png" >&2
+    fi
+    if [ -f "$REPO_ROOT/local/system-n64.png" ]; then  # DEC-5: the owner's own system mark
+        cp "$REPO_ROOT/local/system-n64.png" "$out/theme/art/system-n64.png"
+        echo "bundle: system-n64 from local/system-n64.png" >&2
+    fi
+    if [ -f "$REPO_ROOT/local/launch_splash.png" ]; then  # AC-T17: the captured emulator boot frame
+        cp "$REPO_ROOT/local/launch_splash.png" "$out/theme/art/launch_splash.png"
+        echo "bundle: launch_splash from local/launch_splash.png" >&2
+    fi
+    if [ -f "$REPO_ROOT/local/theme.wav" ]; then  # AC-T12: the owner's own menu music, never committed
+        cp "$REPO_ROOT/local/theme.wav" "$out/theme/music/theme.wav"
+        echo "bundle: music from local/theme.wav" >&2
+    fi
+    if [ -f "$REPO_ROOT/local/splash.mp4" ]; then  # AC-S09: the N64 startup video, replacing Batocera's
+        cp "$REPO_ROOT/local/splash.mp4" "$out/console/splash.mp4"
+        echo "bundle: splash from local/splash.mp4" >&2
+    fi
+    cp "$torch" "$out/tools/torch/torch"
+    # Torch is MIT: its notice must travel with the binary.
+    [ -f "$BUILD_DIR/torch-src/LICENSE" ] || abort "Torch's LICENSE is missing from $BUILD_DIR/torch-src"
+    cp "$BUILD_DIR/torch-src/LICENSE" "$out/tools/torch/LICENSE"
+    cp src/n64mini/__init__.py "$out/python/n64mini/"
+    cp -r src/n64mini/console "$out/python/n64mini/console"
+    find "$out" -name __pycache__ -prune -exec rm -rf {} +
+    echo "$out"
+}
+
+stick() {
+    # The USB stick's contents (DEC-S1): n64mini-bundle/ at the stick's root, where the boot
+    # service looks (/media/<label>/n64mini-bundle). Either onto a mounted stick (under WSL, a
+    # Windows drive: /mnt/e) or, with --image, into a partitioned FAT image for the VM
+    # (Batocera's storage manager mounts partitions only; ./run vm usb FILE or VM_STICK=FILE).
+    local image="" target
+    if [ "${1:-}" = "--image" ]; then
+        image="${2:?usage: ./run stick --image FILE}"
+        if ! command -v mkfs.vfat >/dev/null || ! command -v mcopy >/dev/null; then
+            abort "--image needs mkfs.vfat and mcopy: sudo apt-get install dosfstools mtools"
+        fi
+    else
+        target="${1:?usage: ./run stick STICK_DIR | --image FILE}"
+        [ -d "$target" ] || abort "$target isn't a mounted stick (a folder)"
+    fi
+    local staging; staging="$(mktemp -d)"
+    bundle "$staging/n64mini-bundle" >/dev/null
+    if [ -z "$image" ]; then
+        rm -rf "$target/n64mini-bundle.new"
+        cp -r "$staging/n64mini-bundle" "$target/n64mini-bundle.new"
+        rm -rf "$target/n64mini-bundle"  # replaced only once the new copy is complete
+        mv "$target/n64mini-bundle.new" "$target/n64mini-bundle"
+        rm -rf "$staging"
+        echo "$target/n64mini-bundle"
+        return
+    fi
+    local size_mb=128 start=2048  # one FAT32 partition from 1 MiB, as a real stick has
+    rm -f "$image"
+    truncate -s "${size_mb}M" "$image"
+    echo "$start,,c" | sfdisk -q "$image"
+    mkfs.vfat -F 32 --offset "$start" -n N64MINI "$image" $(( (size_mb * 2048 - start) / 2 )) >/dev/null
+    mcopy -s -i "$image@@$((start * 512))" "$staging/n64mini-bundle" ::/
+    rm -rf "$staging"
+    echo "$image"
+}
+
+# ---- Batocera VM (AC-S08 layer 2) ------------------------------------------------
+# Stock Batocera in QEMU/KVM, headless; snapshots keep a clean state to restore between tests.
+# Everything lives in test_harness/vm/ (git-ignored). Dev machine only (DEC-S2). It has a silent
+# sound card (ports refuse to start without one) and OpenGL through virgl on WSL's render node:
+# Batocera ships no software OpenGL of its own, so without virgl the engine can't run at all.
+# No Vulkan (Batocera has no virtio Vulkan driver), so a Vulkan port stops at its renderer.
+VM_DIR="$REPO_ROOT/test_harness/vm"
+VM_IMAGE_URL=https://mirrors.o2switch.fr/batocera/x86_64/stable/last/batocera-x86_64-43.1-20260529.img.gz
+VM_SSH=(ssh -p 2222 -i "$VM_DIR/id_vm" -o BatchMode=yes -o ConnectTimeout=15
+        -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile="$VM_DIR/known_hosts" root@127.0.0.1)
+
+vm_running() { [ -f "$VM_DIR/qemu.pid" ] && kill -0 "$(cat "$VM_DIR/qemu.pid")" 2>/dev/null; }
+
+vm_wait_ssh() {  # first boot (partition resize) takes ~15 min; later boots under a minute
+    local limit="${1:-1200}" waited=0
+    until timeout 5 bash -c 'exec 3<>/dev/tcp/127.0.0.1/2222 && head -c 4 <&3 | grep -q SSH' 2>/dev/null; do
+        vm_running || abort "the VM stopped while booting (see $VM_DIR/serial.log)"
+        waited=$((waited + 5)); [ "$waited" -lt "$limit" ] || abort "SSH never answered after ${limit}s"
+        sleep 5
+    done
+}
+
+vm_start() {
+    vm_running && return 0
+    [ -f "$VM_DIR/base.qcow2" ] || abort "no VM disk: ./run vm create"
+    [ -f "$VM_DIR/ovmf_vars.fd" ] || cp /usr/share/OVMF/OVMF_VARS_4M.fd "$VM_DIR/ovmf_vars.fd"
+    local stick=()  # VM_STICK=image: a USB stick in from power-on (a reboot drops a hot-plugged one)
+    if [ -n "${VM_STICK:-}" ]; then
+        [ -f "$VM_STICK" ] || abort "no stick image: $VM_STICK"
+        stick=(-drive "if=none,id=stickdrive,format=raw,file=$(readlink -f "$VM_STICK")"
+               -device "usb-storage,bus=usb.0,drive=stickdrive,id=stick")
+    fi
+    local group
+    for group in kvm render; do  # KVM, and the GPU render node virgl draws through
+        id -nG | tr ' ' '\n' | grep -qx "$group" \
+            || abort "you aren't in the $group group: sudo usermod -aG kvm,render \$USER, then wsl --shutdown"
+    done
+    [ -e /dev/dri/renderD128 ] || abort "no GPU render node (/dev/dri/renderD128) for the VM's OpenGL"
+    # VM_DISPLAY=window shows the VM in a window on the desktop (WSLg), for looking at and playing
+    # with by hand; the default is headless, for tests.
+    local display="egl-headless,rendernode=/dev/dri/renderD128" audiodev="none,id=snd0"
+    if [ "${VM_DISPLAY:-}" = window ]; then
+        display="gtk,gl=on"
+        [ -z "${PULSE_SERVER:-}" ] || audiodev="pa,id=snd0,server=$PULSE_SERVER"
+    fi
+    (cd "$VM_DIR" && qemu-system-x86_64 -enable-kvm -machine q35 -cpu host -smp 4 -m 4096 \
+        -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \
+        -drive if=pflash,format=raw,file=ovmf_vars.fd \
+        -drive file=base.qcow2,if=virtio,format=qcow2 \
+        -nic user,model=virtio-net-pci,hostfwd=tcp:127.0.0.1:2222-:22 \
+        -device virtio-vga-gl -display "$display" \
+        -serial file:serial.log \
+        -audiodev "$audiodev" -device ich9-intel-hda -device hda-output,audiodev=snd0 \
+        -device qemu-xhci,id=usb "${stick[@]}" \
+        -monitor unix:monitor.sock,server,nowait -daemonize -pidfile qemu.pid)
+    vm_wait_ssh "${VM_BOOT_LIMIT:-300}"
+    vm_wait_engine
+    [ "${VM_DISPLAY:-}" != window ] || vm_flip_key
+}
+
+vm_flip_key() {
+    # F2 flips Port/Emulator, F3 switches Showcase/Full, and F9 simulates the physical Reset button
+    # (KEY_F13) when playing by hand. Written to both keyboard and default mappings so hotkeygen
+    # sees them through n64mini-topbar's uinput keyboard too.
+    "${VM_SSH[@]}" 'python3 - && hotkeygen --reload' <<'PY'
+import json, pathlib
+keys = json.loads(pathlib.Path("/etc/hotkeygen/default_mapping.conf").read_text())
+keys["KEY_F2"] = "n64mini-flip"
+keys["KEY_F3"] = "n64mini-library"
+keys["KEY_F9"] = "n64mini-reset"
+keys["KEY_F13"] = "n64mini-reset"
+for name in ("AT_Translated_Set_2_keyboard-01-01.mapping", "default_mapping.conf"):
+    out = pathlib.Path("/userdata/system/configs/hotkeygen") / name
+    out.write_text(json.dumps(keys, indent=2) + "\n")
+PY
+}
+
+vm_wait_engine() {
+    # The engine once crash-looped here for hours unnoticed (no OpenGL). Fail loud instead: it
+    # must be running and answering its HTTP API (201 from /runningGame: up, no game running).
+    local waited=0
+    until "${VM_SSH[@]}" 'pidof emulationstation >/dev/null && curl -s -m 3 -o /dev/null -w "%{http_code}" http://127.0.0.1:1234/runningGame | grep -qx 201' 2>/dev/null; do
+        waited=$((waited + 5))
+        [ "$waited" -lt "${VM_ENGINE_LIMIT:-180}" ] \
+            || abort "the engine isn't running in the VM (see /userdata/system/logs/display.log there)"
+        sleep 5
+    done
+}
+
+vm_stop() {
+    vm_running || return 0
+    "${VM_SSH[@]}" 'sync; poweroff' >/dev/null 2>&1 || true
+    local waited=0
+    while vm_running; do
+        waited=$((waited + 2))
+        if [ "$waited" -ge 120 ]; then kill "$(cat "$VM_DIR/qemu.pid")"; break; fi
+        sleep 2
+    done
+    rm -f "$VM_DIR/qemu.pid"
+}
+
+vm_create() {
+    # Fresh stock Batocera: download (MD5 checked against the mirror's), convert, first boot,
+    # install our SSH key (Batocera's default login is root/linux), snapshot "clean".
+    [ ! -f "$VM_DIR/base.qcow2" ] || abort "$VM_DIR/base.qcow2 exists; delete it yourself to recreate"
+    mkdir -p "$VM_DIR" && cd "$VM_DIR"
+    local gz=batocera-43.1.img.gz
+    [ -f "$gz" ] || curl -fL -o "$gz" "$VM_IMAGE_URL"
+    local want; want="$(curl -fsSL "$VM_IMAGE_URL.md5" | awk '{print $1}')"
+    [ "$(md5sum "$gz" | awk '{print $1}')" = "$want" ] || abort "$gz doesn't match the mirror's MD5"
+    gunzip -kc "$gz" > batocera-43.1.img
+    qemu-img convert -f raw -O qcow2 batocera-43.1.img base.qcow2 && rm batocera-43.1.img
+    qemu-img resize base.qcow2 32G >/dev/null
+    [ -f id_vm ] || ssh-keygen -q -t ed25519 -N '' -f id_vm -C n64mini-vm
+    VM_BOOT_LIMIT=1500 vm_start
+    local askpass; askpass="$(mktemp)"; printf '#!/bin/sh\necho linux\n' > "$askpass"; chmod 700 "$askpass"
+    SSH_ASKPASS="$askpass" SSH_ASKPASS_REQUIRE=force DISPLAY=:0 setsid -w ssh -p 2222 \
+        -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile="$VM_DIR/known_hosts" root@127.0.0.1 \
+        'mkdir -p /userdata/system/.ssh && cat >> /userdata/system/.ssh/authorized_keys && chmod 600 /userdata/system/.ssh/authorized_keys' < id_vm.pub
+    rm -f "$askpass"
+    "${VM_SSH[@]}" true || abort "key login failed after installing the key"
+    vm_stop
+    qemu-img snapshot -c clean base.qcow2
+}
+
+vm_monitor() {  # one QEMU monitor command; prints the monitor's reply
+    vm_running || abort "the VM isn't running"
+    python3 -c 'import re, socket, sys, time
+s = socket.socket(socket.AF_UNIX); s.connect(sys.argv[1]); time.sleep(0.3); s.recv(65536)
+s.sendall(sys.argv[2].encode() + b"\n"); time.sleep(1); out = s.recv(65536).decode(errors="replace"); s.close()
+# The monitor echoes each keystroke with terminal codes; keep only its reply.
+lines = [re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", x).strip() for x in out.splitlines()]
+print("\n".join(x for x in lines if x and x != "(qemu)" and not x.endswith(sys.argv[2])))' \
+        "$VM_DIR/monitor.sock" "$1"
+}
+
+vm_usb() {  # plug a disk image in as a USB stick (DEC-S1), or "out" to unplug it
+    if [ "${1:?usage: ./run vm usb IMAGE|out}" = out ]; then
+        vm_monitor "device_del stick"
+        return
+    fi
+    [ -f "$1" ] || abort "no image: $1"
+    vm_monitor "drive_add 0 if=none,id=stickdrive,format=raw,file=$(readlink -f "$1")"
+    vm_monitor "device_add usb-storage,bus=usb.0,drive=stickdrive,id=stick"
+}
+
+vm_shot() {  # the VM's screen, by Batocera's own screenshot tool (QEMU can't dump a GL display)
+    vm_running || abort "the VM isn't running"
+    local out="${1:-$VM_DIR/screen.png}"
+    "${VM_SSH[@]}" 'rm -f /tmp/n64mini-shot.png; batocera-screenshot /tmp/n64mini-shot.png >/dev/null 2>&1; test -s /tmp/n64mini-shot.png' \
+        || abort "the VM took no screenshot"
+    scp -q -P 2222 -i "$VM_DIR/id_vm" -o BatchMode=yes -o UserKnownHostsFile="$VM_DIR/known_hosts" \
+        root@127.0.0.1:/tmp/n64mini-shot.png "$out"
+    echo "$out"
+}
+
+vm() {
+    local cmd="${1:-help}"; [ $# -gt 0 ] && shift
+    case "$cmd" in
+        create)   vm_create ;;
+        start)    vm_start ;;
+        stop)     vm_stop ;;
+        ssh)      vm_running || abort "the VM isn't running: ./run vm start"; "${VM_SSH[@]}" "$@" ;;
+        copy)     vm_running || abort "the VM isn't running"
+                  scp -P 2222 -i "$VM_DIR/id_vm" -o BatchMode=yes -o UserKnownHostsFile="$VM_DIR/known_hosts" -r "${@:1:$#-1}" "root@127.0.0.1:${!#}" ;;
+        snapshot) vm_running && abort "stop the VM first"; qemu-img snapshot -c "${1:?usage: ./run vm snapshot NAME}" "$VM_DIR/base.qcow2" ;;
+        restore)  vm_stop; qemu-img snapshot -a "${1:-clean}" "$VM_DIR/base.qcow2" ;;
+        list)     qemu-img snapshot -l "$VM_DIR/base.qcow2" ;;
+        shot)     vm_shot "$@" ;;
+        usb)      vm_usb "$@" ;;
+        *) abort "usage: ./run vm create|start|stop|ssh [cmd]|copy SRC.. DEST|snapshot NAME|restore [NAME]|list|shot [out.png]|usb IMAGE|out" ;;
+    esac
+}
+
+target="${1:-help}"
+[ $# -gt 0 ] && shift
+case "$target" in
+    lint)     lint "$@" ;;
+    types)    types ;;
+    test)     test_ "$@" ;;
+    validate) validate ;;
+    secrets)  secrets ;;
+    audit)    audit ;;
+    mutate)   mutate "$@" ;;
+    engine)   engine "$@" ;;
+    shot)     shot "$@" ;;
+    vm)       vm "$@" ;;
+    bundle)   bundle "$@" ;;
+    stick)    stick "$@" ;;
+    format)   uv run ruff check --fix .; uv run ruff format . ;;
+    files)    "files_${1:?usage: ./run files all|text|shell}" ;;
+    check)    lint "$@"; types; test_ "$@"; validate; secrets
+              printf '\n\033[32mall checks passed\033[0m\n' ;;
+    all)      "$0" check "$@"; audit; mutate "$@" ;;
+    help)
+        cat <<'HELP'
+Targets:
+  check     THE gate (pre-commit + CI): lint, types, test, validate, secrets
+  lint      ruff, ruff format, import contracts, deptry, vulture, typos, shellcheck
+  types     mypy --strict, pyright strict
+  test      pytest + branch coverage, ratcheted against .quality_baseline.json
+  validate  theme XML against the Batocera grammar (warnings are errors)
+  secrets   detect-secrets over everything a commit could include
+  audit     pip-audit for known CVEs (needs network)
+  mutate    mutmut mutation testing, ratcheted (~10 min)
+  engine    run the real EmulationStation on the theme and print its reduced log (WSL2)
+  shot      screenshot the real engine: ./run shot 'a,right' [out.png] [full|showcase] (WSL2)
+            SHOT_FLIP=<rom file> also gives that game the Port badge before the capture
+            SHOT_SETTLE=<seconds> waits after the inputs (a launch takes a moment)
+            SANDBOX_PORT=<rom file> starts with that game flipped to Port (launches go to
+            test_harness/live/launches.jsonl)
+  bundle D  assemble the console bundle (bundle/n64mini.json, Torch built at its pin, the
+            console Python) into folder D
+  stick S   write the bundle to a mounted USB stick S (under WSL a Windows drive, /mnt/e), as
+            S/n64mini-bundle; --image FILE writes a partitioned FAT image for the VM
+  vm X      Batocera 43.1 VM in QEMU (AC-S08): create|start|stop|ssh [cmd]|copy SRC.. DEST|
+            snapshot NAME|restore [NAME]|list|shot [out.png]|usb IMAGE|out (state in test_harness/vm/)
+  format    apply ruff fixes and formatting
+  files K   print file set K (all, text, shell) that the file-set gates scan
+  all       check + audit + mutate
+Pass --check-only to lint/test/mutate/check/all to compare without tightening the baseline (CI).
+HELP
+        ;;
+    *) echo "unknown target '$target'" >&2; "$0" help >&2; exit 2 ;;
+esac

@@ -1,0 +1,12 @@
+Upstream: https://github.com/batocera-linux/batocera-emulationstation
+Commit: 62d12b3f0712300008e98b8ff392f90c8938b0ef (2026-11-04)
+Files: es-core/src/ThemeData.cpp, es-core/src/AudioManager.cpp, es-core/src/utils/HtmlColor.cpp,
+       es-core/src/utils/StringUtil.cpp, es-core/src/utils/FileSystemUtil.cpp, es-core/src/utils/MathExpr.cpp,
+       es-core/src/math/Vector2f.cpp, es-core/src/math/Vector4f.cpp, es-core/src/anim/ThemeStoryboard.cpp,
+       es-core/src/math/Vector2f.h, es-core/src/math/Vector4f.h,
+       es-core/src/components/GridTileComponent.cpp, es-core/src/components/GridTileComponent.h,
+       es-core/src/components/ImageGridComponent.h, es-core/src/components/NinePatchComponent.cpp,
+       es-app/src/SystemData.cpp, es-app/src/CollectionSystemManager.cpp,
+       es-app/src/views/gamelist/DetailedContainer.cpp, es-app/src/guis/GuiSaveState.cpp,
+       es-core/src/Scripting.cpp, es-app/src/services/HttpServerThread.cpp, es-core/src/Settings.cpp,
+       es-app/src/views/ViewController.cpp, es-app/src/main.cpp, es-core/src/Splash.cpp

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Fallback for any system without its own folder: the engine's built-in collections
+     (all games, favourites, ...) and genre/user collections. theme.xml includes
+     ./$system/custom.xml, which the engine resolves to ./default/custom.xml when
+     ./<system>/ doesn't exist (docs/requirements/validator.md AC-V22). -->
+<theme>
+  <formatVersion>7</formatVersion>
+</theme>

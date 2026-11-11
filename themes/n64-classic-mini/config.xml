@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<theme>
+  <formatVersion>7</formatVersion>
+  <variables>
+    <mainColor>242834</mainColor>
+    <accentRed>EE2A30</accentRed>
+    <accentGold>FFDC38</accentGold>
+    <textColor>121620</textColor>
+  </variables>
+</theme>

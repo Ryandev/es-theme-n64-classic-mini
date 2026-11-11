@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- defaultView: a game list opens in this view unless the user picked another
+     (ThemeData::parseTheme reads it from the root; ViewController uses it for "automatic"). -->
+<theme defaultView="grid">
+  <formatVersion>7</formatVersion>
+  <include>./config.xml</include>
+  <include>./base.xml</include>
+  <include>./gamesplash.xml</include>
+  <include>./$system/custom.xml</include>
+</theme>

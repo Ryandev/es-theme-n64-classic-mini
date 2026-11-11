@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg width="128" height="128" version="1.1" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <!-- N64 NUS-006 Game Pak silhouette for EmulationStation save-state slots -->
+  <path fill="#5A606E" stroke="#262A34" stroke-linejoin="round" stroke-width="3"
+        d="M 10 30 Q 64 14 118 30 L 118 96 L 106 96 L 106 114 L 22 114 L 22 96 L 10 96 Z"/>
+  <path fill="none" stroke="#8890A2" stroke-linecap="round" stroke-width="2"
+        d="M 14 31 Q 64 17 114 31"/>
+  <!-- Left grip ribs -->
+  <line stroke="#3C424E" stroke-width="2.5" x1="14" y1="42" x2="28" y2="42"/>
+  <line stroke="#3C424E" stroke-width="2.5" x1="14" y1="50" x2="28" y2="50"/>
+  <line stroke="#3C424E" stroke-width="2.5" x1="14" y1="58" x2="28" y2="58"/>
+  <line stroke="#3C424E" stroke-width="2.5" x1="14" y1="66" x2="28" y2="66"/>
+  <line stroke="#3C424E" stroke-width="2.5" x1="14" y1="74" x2="28" y2="74"/>
+  <line stroke="#3C424E" stroke-width="2.5" x1="14" y1="82" x2="28" y2="82"/>
+  <line stroke="#3C424E" stroke-width="2.5" x1="14" y1="90" x2="28" y2="90"/>
+  <!-- Right grip ribs -->
+  <line stroke="#3C424E" stroke-width="2.5" x1="100" y1="42" x2="114" y2="42"/>
+  <line stroke="#3C424E" stroke-width="2.5" x1="100" y1="50" x2="114" y2="50"/>
+  <line stroke="#3C424E" stroke-width="2.5" x1="100" y1="58" x2="114" y2="58"/>
+  <line stroke="#3C424E" stroke-width="2.5" x1="100" y1="66" x2="114" y2="66"/>
+  <line stroke="#3C424E" stroke-width="2.5" x1="100" y1="74" x2="114" y2="74"/>
+  <line stroke="#3C424E" stroke-width="2.5" x1="100" y1="82" x2="114" y2="82"/>
+  <line stroke="#3C424E" stroke-width="2.5" x1="100" y1="90" x2="114" y2="90"/>
+  <!-- Central recessed cartridge label -->
+  <path fill="#181C26" stroke="#3C424E" stroke-linejoin="round" stroke-width="2"
+        d="M 34 28 H 94 V 92 H 34 Z"/>
+  <!-- Right red N64 label band -->
+  <path fill="#CC2131" d="M 81 30 H 92 V 90 H 81 Z"/>
+  <!-- Top 4-colour N64 accent strip -->
+  <path fill="#019246" d="M 36 30 H 47 V 35 H 36 Z"/>
+  <path fill="#013399" d="M 47 30 H 58 V 35 H 47 Z"/>
+  <path fill="#FFC001" d="M 58 30 H 69 V 35 H 58 Z"/>
+  <path fill="#FE212E" d="M 69 30 H 80 V 35 H 69 Z"/>
+  <!-- Save state chip / gold emblem inside label -->
+  <path fill="#262E42" stroke="#FFDC38" stroke-linejoin="round" stroke-width="2"
+        d="M 43 44 H 73 V 78 H 43 Z"/>
+  <path fill="#FFDC38" d="M 49 52 H 67 V 56 H 49 Z M 49 60 H 67 V 64 H 49 Z M 49 68 H 61 V 72 H 49 Z"/>
+  <!-- Bottom moulding directional triangle -->
+  <path fill="#3C424E" d="M 57 99 H 71 L 64 108 Z"/>
+</svg>

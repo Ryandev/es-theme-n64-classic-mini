@@ -1,0 +1,341 @@
+{
+ "about": "What n64mini-setup installs on the console (system.md AC-S02..S07), in order. Checksums and ROM SHA-1s checked 2026-11-06: docs/ports.md. `frontend/run bundle` adds python/ (the console package), theme/ and tools/torch (built at the commit in its version).",
+ "components": [
+  {
+   "name": "python",
+   "kind": "files",
+   "version": "content",
+   "source": "python/n64mini",
+   "target": "system/n64mini/python/n64mini",
+   "executable": [
+    "console/data/*.sh"
+   ]
+  },
+  {
+   "name": "theme",
+   "kind": "files",
+   "version": "content",
+   "source": "theme",
+   "target": "themes/n64-classic-mini",
+   "restart_engine": true
+  },
+  {
+   "name": "es-systems-n64",
+   "kind": "file",
+   "version": "content",
+   "source": "console/es_systems_n64.cfg",
+   "target": "system/configs/emulationstation/es_systems_n64.cfg",
+   "restart_engine": true
+  },
+  {
+   "name": "es-resources",
+   "kind": "files",
+   "version": "content",
+   "source": "console/resources",
+   "target": "system/configs/emulationstation/resources",
+   "restart_engine": true
+  },
+  {
+   "name": "settings",
+   "kind": "es-settings",
+   "version": "content",
+   "settings": {
+    "ThemeSet": "n64-classic-mini",
+    "StartupSystem": "n64",
+    "StartupOnGameList": true,
+    "CollectionSystemsAuto": "",
+    "GameTransitionStyle": "instant",
+    "ScreenSaverTime": 0,
+    "kodi.enabled": false,
+    "kodi.atstartup": false
+   },
+   "only_system": "n64",
+   "restart_engine": true
+  },
+  {
+   "name": "game-selected",
+   "kind": "file",
+   "version": "content",
+   "source": "console/game-selected.sh",
+   "target": "system/configs/emulationstation/scripts/game-selected/n64mini.sh",
+   "executable": true
+  },
+  {
+   "name": "hotkeys",
+   "kind": "file",
+   "version": "content",
+   "source": "console/hotkeygen-common_context.conf",
+   "target": "system/configs/hotkeygen/common_context.conf"
+  },
+  {
+   "name": "hotkey-mapping",
+   "kind": "file",
+   "version": "content",
+   "source": "console/hotkeygen-default_mapping.conf",
+   "target": "system/configs/hotkeygen/default_mapping.conf"
+  },
+  {
+   "name": "service",
+   "kind": "file",
+   "version": "content",
+   "source": "console/n64mini-service.sh",
+   "target": "system/services/n64mini",
+   "executable": true
+  },
+  {
+   "name": "splash",
+   "kind": "file",
+   "version": "content",
+   "source": "console/splash.mp4",
+   "target": "splash/splash.mp4"
+  },
+  {
+   "name": "tool:torch",
+   "kind": "files",
+   "version": "2d474ddb8da8b213fbdbb49d0273ce31fa955f35",
+   "source": "tools/torch",
+   "target": "system/n64mini/tools/torch",
+   "executable": [
+    "torch"
+   ]
+  },
+  {
+   "name": "port:snowboardkids2",
+   "kind": "port",
+   "version": "2.0.2",
+   "url": "https://github.com/cdlewis/snowboardkids2-recomp/releases/download/v2.0.2/SnowboardKids2Recompiled-Linux-X64.tar.gz",
+   "sha256": "be89a751c26e33f1d467d014bb784848402596ef4d219f262f7b9518f5b3690e",
+   "archive": "tar.gz",
+   "game": "Snowboard Kids 2",
+   "rom": "snowboardkids2.n64.us.z64",
+   "rom_sha1": [
+    "5ce896fd64276948bc2b8cccd8cd51c25a9f32aa"
+   ],
+   "links": [
+    "snowboardkids2.n64.us.z64"
+   ],
+   "command": [
+    "env",
+    "-C",
+    "{dir}",
+    "APP_FOLDER_PATH={data}",
+    "{dir}/SnowboardKids2Recompiled",
+    "--game",
+    "snowboardkids2"
+   ]
+  },
+  {
+   "name": "port:spaghettikart",
+   "kind": "port",
+   "version": "1.0.0",
+   "url": "https://github.com/HarbourMasters/SpaghettiKart/releases/download/1.0.0/spaghetti-linux.zip",
+   "sha256": "54e249bd4aa71e55c63239c9c1c0eb522b07497d85f2ede193907059e4de250c",
+   "archive": "zip",
+   "extras": [
+    {
+     "url": "https://codeload.github.com/HarbourMasters/SpaghettiKart/tar.gz/refs/tags/1.0.0",
+     "sha256": "8000025feb798488432e7fb6024ac42ca9b281aa070b4e1e58d361efe0e5b10e",
+     "archive": "tar.gz",
+     "into": "source",
+     "strip": true
+    }
+   ],
+   "game": "Mario Kart 64",
+   "rom": "source/baserom.us.z64",
+   "rom_sha1": [
+    "579c48e211ae952530ffc8738709f078d5dd215e"
+   ],
+   "run": [
+    {
+     "argv": [
+      "{userdata}/system/n64mini/tools/torch/torch",
+      "o2r",
+      "-d",
+      "{build}",
+      "baserom.us.z64",
+      "--additional-files",
+      "meta/mods.toml"
+     ],
+     "cwd": "source"
+    }
+   ],
+   "remove": [
+    "source",
+    "torch.hash.yml"
+   ],
+   "links": [
+    "mk64.o2r"
+   ],
+   "command": [
+    "env",
+    "SHIP_HOME={data}",
+    "{dir}/spaghetti.appimage"
+   ]
+  },
+  {
+   "name": "port:banjo",
+   "kind": "port",
+   "version": "1.0.2",
+   "url": "https://github.com/BanjoRecomp/BanjoRecomp/releases/download/v1.0.2/BanjoRecompiled-v1.0.2-Linux-X64.tar.gz",
+   "sha256": "a34a4d361221171ea638e0165301fff817c53b9cd46167c5affd37867cfc7ad0",
+   "archive": "tar.gz",
+   "game": "Banjo-Kazooie",
+   "rom": "bk.n64.us.1.0.z64",
+   "rom_sha1": [
+    "1fe1632098865f639e22c11b9a81ee8f29c75d7a"
+   ],
+   "links": [
+    "bk.n64.us.1.0.z64"
+   ],
+   "command": [
+    "env",
+    "-C",
+    "{dir}",
+    "APP_FOLDER_PATH={data}",
+    "{dir}/BanjoRecompiled"
+   ]
+  },
+  {
+   "name": "port:bomberman64",
+   "kind": "port",
+   "version": "1.0.0",
+   "url": "https://github.com/RevoSucks/BM64Recomp/releases/download/v1.0.0/BM64Recompiled-Linux-X64-Release.zip",
+   "sha256": "0a8f1889295ca0e06802e37317862e1552e98f09022c111b145396f36ae20bba",
+   "archive": "zip",
+   "game": "Bomberman 64",
+   "rom": "bm64_us.z64",
+   "rom_sha1": [
+    "8a7648d8105ac4fc1ad942291b2ef89aeca921c9"
+   ],
+   "run": [
+    {
+     "argv": [
+      "tar",
+      "-xzf",
+      "BM64Recompiled.tar.gz"
+     ]
+    }
+   ],
+   "remove": [
+    "BM64Recompiled.tar.gz"
+   ],
+   "links": [
+    "bm64_us.z64"
+   ],
+   "command": [
+    "env",
+    "-C",
+    "{dir}",
+    "APP_FOLDER_PATH={data}",
+    "{dir}/BM64Recompiled"
+   ]
+  },
+  {
+   "name": "port:zelda64",
+   "kind": "port",
+   "version": "1.2.2",
+   "url": "https://github.com/Zelda64Recomp/Zelda64Recomp/releases/download/v1.2.2/Zelda64Recompiled-v1.2.2-Linux-X64.zip",
+   "sha256": "de8b19cdb4e3ad0c10fd6d8127f7a6cc2a9eba106d89c753439178b718887c42",
+   "archive": "zip",
+   "game": "The Legend of Zelda: Majora's Mask",
+   "rom": "mm.n64.us.1.0.z64",
+   "rom_sha1": [
+    "d6133ace5afaa0882cf214cf88daba39e266c078"
+   ],
+   "run": [
+    {
+     "argv": [
+      "tar",
+      "-xzf",
+      "Zelda64Recompiled.tar.gz"
+     ]
+    }
+   ],
+   "remove": [
+    "Zelda64Recompiled.tar.gz"
+   ],
+   "links": [
+    "mm.n64.us.1.0.z64"
+   ],
+   "command": [
+    "env",
+    "-C",
+    "{dir}",
+    "APP_FOLDER_PATH={data}",
+    "{dir}/Zelda64Recompiled"
+   ]
+  },
+  {
+   "name": "port:dk64",
+   "kind": "port",
+   "version": "1.0.3",
+   "url": "https://github.com/Rainchus/Donkey-Kong-64-Recompiled/releases/download/v1.0.3/DK64Recompiled-Linux-X64-Release-1-0-3.zip",
+   "sha256": "352380418f2376640825fe65b0ba085e12e7b792205cfa435a6caa0202e54b5c",
+   "archive": "zip",
+   "game": "Donkey Kong 64",
+   "rom": "DK64.z64",
+   "rom_sha1": [
+    "cf806ff2603640a748fca5026ded28802f1f4a50"
+   ],
+   "run": [
+    {
+     "argv": [
+      "tar",
+      "-xzf",
+      "DK64Recompiled.tar.gz"
+     ]
+    }
+   ],
+   "remove": [
+    "DK64Recompiled.tar.gz"
+   ],
+   "links": [
+    "DK64.z64"
+   ],
+   "command": [
+    "env",
+    "-C",
+    "{dir}",
+    "APP_FOLDER_PATH={data}",
+    "{dir}/DK64Recompiled",
+    "--game",
+    "dk64"
+   ]
+  },
+  {
+   "name": "port:starfox64",
+   "kind": "port",
+   "version": "1.0.3",
+   "url": "https://github.com/sonicdcer/Starfox64Recomp/releases/download/1.0.3/Starfox64Recompiled-v1.0.3-Linux-X64-Release.zip",
+   "sha256": "e74932bd0edb6186a015dabaa87b6b24af3d3b5511ff3b0293a2c3331840cdf0",
+   "archive": "zip",
+   "game": "Star Fox 64",
+   "rom": "sf64.n64.us.1.1.z64",
+   "rom_sha1": [
+    "d8b1088520f7c5f81433292a9258c1184afa1457"
+   ],
+   "run": [
+    {
+     "argv": [
+      "tar",
+      "-xzf",
+      "Starfox64Recompiled.tar.gz"
+     ]
+    }
+   ],
+   "remove": [
+    "Starfox64Recompiled.tar.gz"
+   ],
+   "links": [
+    "sf64.n64.us.1.1.z64"
+   ],
+   "command": [
+    "env",
+    "-C",
+    "{dir}",
+    "APP_FOLDER_PATH={data}",
+    "{dir}/Starfox64Recompiled"
+   ]
+  }
+ ]
+}

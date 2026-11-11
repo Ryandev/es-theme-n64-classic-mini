@@ -1,0 +1,223 @@
+[project]
+name = "n64mini"
+version = "0.1.0"
+description = "N64 Classic Mini frontend tooling: Batocera theme generation, validation and test harness"
+readme = "README.md"
+# Batocera's on-device Python is 3.12; on-device code must not use newer syntax.
+requires-python = ">=3.12"
+dependencies = [
+    "lxml>=5.3",
+    "pillow>=11.0",
+]
+
+[project.scripts]
+n64mini-validate-theme = "n64mini.theme_schema.cli:main"
+n64mini-extract-grammar = "n64mini.theme_schema.extract:main"
+n64mini-generate-assets = "n64mini.theme_assets.generate:main"
+n64mini-compare-theme = "n64mini.harness.compare:main"
+n64mini-capture-live = "n64mini.harness.live:main"
+n64mini-showcase = "n64mini.console.showcase:main"
+n64mini-flip = "n64mini.console.flip:main"
+n64mini-launch = "n64mini.console.launch:main"
+n64mini-setup = "n64mini.console.setup:main"
+n64mini-suspend = "n64mini.console.suspend:main"
+n64mini-sandbox = "n64mini.harness.sandbox:main"
+
+[dependency-groups]
+dev = [
+    # types
+    "lxml-stubs>=0.5.1",
+    "mypy>=1.13",
+    "numpy>=2.1",  # type-checking only: Pillow signatures reference numpy array types
+    "pyright>=1.1.390",
+    # lint
+    "ruff>=0.8",
+    "shellcheck-py>=0.10",  # pinned shellcheck binary, so local and CI match
+    "import-linter>=2.1",
+    "deptry>=0.21",
+    "detect-secrets>=1.5",
+    "pip-audit>=2.7",
+    # test
+    "pytest>=8.3",
+    "pytest-cov>=6.0",
+    "pytest-randomly>=3.16",
+    "pytest-timeout>=2.3",
+    "hypothesis>=6.120",
+    "mutmut>=3.2",
+    "vulture>=2.13",
+    "typos>=1.28",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/n64mini"]
+
+# ---------------------------------------------------------------- ruff
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests", "tools"]
+extend-exclude = ["vulture_allowlist.py"]  # bare names are vulture's allowlist format
+
+[tool.ruff.lint]
+# Everything on; each ignore below says why.
+select = ["ALL"]
+ignore = [
+    "COM812",   # trailing commas: conflicts with ruff format
+    "CPY001",   # per-file copyright headers: licence lives at repo root
+    "D105", "D107",  # magic methods / __init__: documented on the class
+    "D203", "D213",  # pick D211 + D212 (no blank line before class doc, summary on line 1)
+    "PLR2004",  # magic values: grammar constants and pixel coordinates are the domain
+    "PLR0911", "PLR0912",  # branchy validators mirror upstream C++ structure
+    "EM101", "EM102", "TRY003",  # f-string exception messages are clearer here
+    "FIX002", "TD002", "TD003",  # TODOs allowed without author or issue link
+]
+
+[tool.ruff.lint.per-file-ignores]
+# S603/S607: test_gates.py runs the real gate tools as subprocesses, by design.
+"tests/**" = ["S101", "D", "PLR2004", "PLC2701", "INP001", "S603", "S607"]
+# S603/S607: dev tools run git as a subprocess, by design (no shell, fixed executable).
+"tools/**" = ["T201", "INP001", "S603", "S607"]
+# CLI entry points report to stdout by design.
+"src/n64mini/**/{cli,compare,extract,flip,generate,launch,live,sandbox,setup,showcase,strip,suspend}.py" = ["T201"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.mccabe]
+max-complexity = 12
+
+[tool.ruff.format]
+docstring-code-format = true
+
+# ---------------------------------------------------------------- mypy
+[tool.mypy]
+python_version = "3.12"
+strict = true
+mypy_path = "src"
+files = ["src", "tests", "tools"]
+warn_unreachable = true
+enable_error_code = [
+    "ignore-without-code",
+    "redundant-expr",
+    "truthy-bool",
+    "possibly-undefined",
+    "explicit-override",
+]
+
+# ---------------------------------------------------------------- pyright
+[tool.pyright]
+include = ["src", "tests", "tools"]
+pythonVersion = "3.12"
+typeCheckingMode = "strict"
+venvPath = "."
+venv = ".venv"
+reportPrivateUsage = false   # lxml's public types are spelled etree._Element
+
+# ---------------------------------------------------------------- pytest
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["-ra", "--strict-markers", "--strict-config"]
+xfail_strict = true
+filterwarnings = ["error"]
+timeout = 60
+
+# ---------------------------------------------------------------- coverage
+[tool.coverage.run]
+branch = true
+source = ["n64mini"]
+# Needs a live EmulationStation window on a Windows host; exercised manually.
+omit = ["*/n64mini/harness/live.py"]
+
+[tool.coverage.report]
+# Floor for everything (owner, 2026-11-06: a 90%+ bar everywhere costs more than it catches).
+# The no-drop ratchet (tools/ratchet.py, .quality_baseline.json) applies only to the console
+# code and the validator (ratchet.RATCHETED), where a mistake runs unattended or is invisible.
+fail_under = 80
+show_missing = true
+skip_covered = true
+exclude_also = ["if TYPE_CHECKING:", "raise AssertionError", "raise SystemExit\\(main\\(\\)\\)"]
+
+# ---------------------------------------------------------------- mutmut
+[tool.mutmut]
+source_paths = ["src/"]
+# Pixel-drawing code: mutating coordinates/colours yields equivalent mutants
+# that only a golden image could kill, and those are covered byte-for-byte by
+# test_generator_reproduces_committed_art. live.py needs real hardware.
+do_not_mutate = ["*/background.py", "*/shapes.py", "*/report.py", "*/live.py"]
+pytest_add_cli_args_test_selection = ["tests/"]
+also_copy = ["vendor/", "assets/", "tools/", ".quality_baseline.json"]
+
+# ---------------------------------------------------------------- import-linter
+[tool.importlinter]
+root_package = "n64mini"
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "Layers: harness -> theme_assets -> paths; schema is standalone"
+type = "layers"
+layers = ["n64mini.harness", "n64mini.theme_assets", "n64mini.paths"]
+
+[[tool.importlinter.contracts]]
+name = "The validator never depends on rendering or the harness"
+type = "forbidden"
+source_modules = ["n64mini.theme_schema"]
+forbidden_modules = ["n64mini.harness", "n64mini.theme_assets", "PIL"]
+
+[[tool.importlinter.contracts]]
+# Runs on the Batocera console, whose Python ships only the standard library (frontend/AGENTS.md).
+name = "Console code uses the standard library only"
+type = "forbidden"
+source_modules = ["n64mini.console"]
+forbidden_modules = ["n64mini.harness", "n64mini.theme_assets", "n64mini.theme_schema", "n64mini.paths", "PIL", "lxml"]
+# Batocera 43.1 ships Pillow 11.0.0 (its configgen bezel code imports it; checked in the 43.1 VM,
+# 2026-11-06, with JPEG support). Only the strip drawing (AC-T20), launch card-flip splash
+# composition (AC-T17), and Suspend Point List drawer composition (AC-T13) need it, so only they may.
+ignore_imports = [
+    "n64mini.console.strip -> PIL",
+    "n64mini.console.launch -> PIL",
+    "n64mini.console.suspend -> PIL",
+]
+
+# ---------------------------------------------------------------- deptry
+[tool.deptry]
+known_first_party = ["n64mini"]
+
+[tool.deptry.per_rule_ignores]
+DEP002 = []
+
+# ---------------------------------------------------------------- typos
+# Spell checker (MIT/Apache-2.0), run repo-wide by `./run lint`.
+[tool.typos.default.extend-words]
+Additionnal = "Additionnal"  # the engine's own function name (SystemData::loadAdditionnalConfig)
+PN = "PN"          # from "PNG"/"PNGs" split at case changes
+ba = "ba"          # `(ba)?sh` in the shell-file selector regex
+hda = "hda"        # QEMU's HD Audio device (`hda-output`) in the VM target
+iy = "iy"          # loop variable in the art generator
+tru = "tru"        # a deliberately invalid boolean in tests
+unknow = "unknow"  # quotes the engine's own log typo ("unknow random element", ThemeData.cpp)
+
+[tool.typos.files]
+extend-exclude = ["vendor/", "uv.lock"]
+
+# ---------------------------------------------------------------- licences
+# Dependency vetting (adapted from workspace3 .claude/rules/dependencies.md),
+# enforced by tests/test_licences.py. Runtime dependencies (they ship) must be
+# permissive or weak copyleft. A dev-only tool with any other licence needs an
+# entry in `exceptions` with the reason and who approved it.
+[tool.n64mini.licences]
+allowed = ["MIT", "MIT-CMU", "BSD", "Apache", "0BSD", "Zlib", "CC0", "PSF", "ISC", "MPL-2.0"]
+
+# Dependencies that ship a native program, and that program's own licence. The wrapper's
+# metadata can differ from what it bundles (shellcheck-py is MIT; shellcheck is GPL-3.0).
+# tests/test_licences.py detects bundled executables and fails if one isn't listed here.
+[tool.n64mini.licences.bundled]
+ruff = "MIT"
+typos = "MIT OR Apache-2.0"
+shellcheck-py = "GPL-3.0-only"
+
+[tool.n64mini.licences.exceptions]
+shellcheck-py = "Bundles shellcheck (GPL-3.0-only). Dev-only linter, run on dev machines and CI, never shipped, linked or copied into the repo. No permissive equivalent of comparable quality. Owner approved 2026-11-05: dev-only GPL tools are acceptable; anything that ships must be permissive."

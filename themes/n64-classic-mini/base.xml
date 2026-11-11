@@ -1,0 +1,334 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<theme>
+  <formatVersion>7</formatVersion>
+
+  <view name="system, basic, detailed, grid">
+    <image name="background" extra="true">
+      <pos>0 0</pos>
+      <size>1 1</size>
+      <origin>0 0</origin>
+      <path>./art/n64_classic_bg.png</path>
+      <zIndex>5</zIndex>
+    </image>
+    <!-- DEC-5: the three flat LED-highlighted option icons (Settings cog, Showcase/Full library
+         toggle, BG music toggle) in the centre recessed pocket and the 3D 'N' logo on the right of
+         the top bar (y=0..92), a layer of its own so a console can carry its owner's mark
+         (local/brand.png, swapped in by frontend/run bundle). -->
+    <image name="brand" extra="true">
+      <pos>0.5 0.06389</pos>
+      <origin>0.5 0.5</origin>
+      <size>0.9375 0.11389</size>
+      <path>./art/brand.png</path>
+      <zIndex>6</zIndex>
+    </image>
+    <!-- AC-T21: the bottom-left brand wordmark and bottom-right crimson Power LED in the
+         bottom bar (y=630..720), a layer of its own like the brand (local/console.png). -->
+    <image name="console" extra="true">
+      <pos>0.5 0.93889</pos>
+      <origin>0.5 0.5</origin>
+      <size>0.9375 0.11389</size>
+      <path>./art/console.png</path>
+      <zIndex>6</zIndex>
+    </image>
+
+    <!-- AC-T16: the engine's built-in 7-button helpsystem is hidden (transparent) so only the
+         three Classic Mini prompts ([D-Pad Up] Menu, [D-Pad Down] Save States, [A] Start Game)
+         above the bottom bar are shown. -->
+    <helpsystem name="help">
+      <pos>0.5 0.81944</pos>
+      <origin>0.5 0.5</origin>
+      <textColor>00000000</textColor>
+      <iconColor>00000000</iconColor>
+      <fontPath>./fonts/DejaVuSans-Bold.ttf</fontPath>
+      <fontSize>0.0178</fontSize>
+      <!-- Batocera's internal input names follow SNES (b = South/Confirm, a = East/Back), so
+           iconB is the N64's Blue A (confirm/launch) and iconA is the N64's Green B (back). -->
+      <iconA>./art/btn_b.png</iconA>
+      <iconB>./art/btn_a.png</iconB>
+      <iconX>./art/btn_x.png</iconX>
+      <iconY>./art/btn_y.png</iconY>
+      <iconL>./art/btn_l.png</iconL>
+      <iconR>./art/btn_r.png</iconR>
+      <iconStart>./art/btn_start.png</iconStart>
+      <iconSelect>./art/btn_select.png</iconSelect>
+      <iconUpDownLeftRight>./art/btn_dpad_all.png</iconUpDownLeftRight>
+      <iconUpDown>./art/btn_dpad_ud.png</iconUpDown>
+      <iconLeftRight>./art/btn_dpad_lr.png</iconLeftRight>
+    </helpsystem>
+  </view>
+
+  <!-- Menus: the main menu, every settings screen and the suspend-point screen (GuiSaveState)
+       read this through ThemeData::ThemeMenu, which looks up these exact names; a misspelled
+       name is silently ignored. Chamfered N64 console frame (tile_default.png), DejaVu Sans Bold
+       UI typography, royal-slate selection highlight and gold active text. -->
+  <view name="menu">
+    <menuBackground name="menubg">
+      <path>./art/tile_default.png</path>
+      <cornerSize>24 24</cornerSize>
+      <color>FFFFFFFF</color>
+      <centerColor>FFFFFFFF</centerColor>
+      <scrollbarColor>FFDC38FF</scrollbarColor>
+    </menuBackground>
+    <menuText name="menutitle">
+      <!-- DejaVu Sans Bold matches the Fontworks Rodin Pro DB sans-serif UI typeface of the
+           Classic Mini reference; 0.045 keeps "USER INTERFACE SETTINGS" inside the 720 px panel. -->
+      <fontPath>./fonts/DejaVuSans-Bold.ttf</fontPath>
+      <fontSize>0.045</fontSize>
+      <color>FFDC38FF</color>
+    </menuText>
+    <menuText name="menufooter">
+      <fontPath>./fonts/DejaVuSans-Bold.ttf</fontPath>
+      <fontSize>0.018</fontSize>
+      <color>8890A0FF</color>
+    </menuText>
+    <menuText name="menutext">
+      <fontPath>./fonts/DejaVuSans-Bold.ttf</fontPath>
+      <fontSize>0.022</fontSize>
+      <color>E6EAF2FF</color>
+      <separatorColor>3A4050FF</separatorColor>
+      <selectorColor>283652FF</selectorColor>
+      <selectedColor>FFDC38FF</selectedColor>
+    </menuText>
+    <menuTextSmall name="menutextsmall">
+      <fontPath>./fonts/DejaVuSans-Bold.ttf</fontPath>
+      <fontSize>0.018</fontSize>
+      <color>A8B0C0FF</color>
+    </menuTextSmall>
+    <menuGroup name="menugroup">
+      <fontPath>./fonts/DejaVuSans-Bold.ttf</fontPath>
+      <fontSize>0.020</fontSize>
+      <color>FFDC38FF</color>
+      <separatorColor>3A4050FF</separatorColor>
+    </menuGroup>
+  </view>
+
+  <!-- Window-level overlays (Window::onThemeChanged): the engine draws a clock bottom-right and a
+       battery/network indicator top-right over every view. They don't belong on the console's
+       front end (OPEN-4). -->
+  <view name="screen">
+    <text name="clock">
+      <visible>false</visible>
+    </text>
+    <batteryIndicator name="batteryIndicator">
+      <visible>false</visible>
+    </batteryIndicator>
+  </view>
+
+  <!-- AC-T10: the system view (Back from the game list) in the same style: the carousel over
+       the background instead of the engine's pale band, each system's logo plate in the middle
+       (n64/custom.xml), and the game count in the title banner. -->
+  <view name="system">
+    <!-- AC-T12: the theme's own music (audio.thememusics, on by default): an original loop
+         generated with the art (theme_assets/music.py), a stand-in until tracks are chosen. -->
+    <sound name="bgsound">
+      <path>./music/theme.wav</path>
+    </sound>
+    <carousel name="systemcarousel">
+      <type>horizontal</type>
+      <pos>0 0.30556</pos>
+      <size>1 0.34444</size>
+      <color>00000000</color>
+      <logoSize>0.28125 0.30556</logoSize>
+      <logoScale>1.0</logoScale>
+      <maxLogoCount>3</maxLogoCount>
+      <zIndex>40</zIndex>
+    </carousel>
+    <text name="systemInfo">
+      <pos>0.5 0.18264</pos>
+      <origin>0.5 0.5</origin>
+      <size>0.58 0.055</size>
+      <fontPath>./fonts/DejaVuSans-Bold.ttf</fontPath>
+      <fontSize>0.03472</fontSize>
+      <color>F2F5FAFF</color>
+      <backgroundColor>00000000</backgroundColor>
+      <forceUppercase>1</forceUppercase>
+      <alignment>center</alignment>
+      <zIndex>45</zIndex>
+    </text>
+  </view>
+
+  <view name="grid">
+    <!-- Dynamic Game Title inside Dark Console Pill Banner (y=103..160) -->
+    <text name="md_name">
+      <pos>0.5 0.18264</pos>
+      <origin>0.5 0.5</origin>
+      <size>0.58 0.055</size>
+      <fontPath>./fonts/DejaVuSans-Bold.ttf</fontPath>
+      <fontSize>0.03472</fontSize>
+      <color>F2F5FAFF</color>
+      <alignment>center</alignment>
+      <!-- A title wider than the banner scrolls instead of being cut to "…" (TextComponent:
+           only a line that doesn't fit scrolls). -->
+      <autoScroll>horizontal</autoScroll>
+      <zIndex>45</zIndex>
+    </text>
+
+    <!-- Live top-bar pocket state (Showcase/Full library and BG music LED icons) updated in-place
+         via {game:multidisk} so EmulationStation dims it together with the rest of the background
+         when modal menus open. -->
+    <image name="topbar" extra="true">
+      <path>{game:multidisk}</path>
+      <pos>0.5 0.06389</pos>
+      <origin>0.5 0.5</origin>
+      <size>0.9375 0.11389</size>
+      <zIndex>7</zIndex>
+    </image>
+
+    <!-- AC-T20: every game's box art in a strip, a cursor over the selected one. Three concentric
+         subset layers around the cursor's vertical axis spin the ▼ cursor continuously while
+         keeping the thumbnails and axis centre permanently visible. -->
+    <image name="stripbase" extra="true">
+      <path>"/userdata/system/n64mini/strip-base/" + {game:rom} + ".png"</path>
+      <pos>0.5 0.68889</pos>
+      <origin>0.5 0.5</origin>
+      <size>0.9 0.09444</size>
+      <zIndex>28</zIndex>
+    </image>
+    <image name="stripspin" extra="true">
+      <path>"/userdata/system/n64mini/strip-mid/" + {game:rom} + ".png"</path>
+      <pos>0.5 0.68889</pos>
+      <origin>0.5 0.5</origin>
+      <size>0.9 0.09444</size>
+      <zIndex>29</zIndex>
+      <storyboard repeat="forever">
+        <animation property="opacity" from="1" to="0" duration="360" autoreverse="true" repeat="forever"/>
+      </storyboard>
+    </image>
+    <image name="strip" extra="true">
+      <path>"/userdata/system/n64mini/strip/" + {game:rom} + ".png"</path>
+      <pos>0.5 0.68889</pos>
+      <origin>0.5 0.5</origin>
+      <size>0.9 0.09444</size>
+      <zIndex>30</zIndex>
+      <storyboard repeat="forever">
+        <animation property="opacity" from="1" to="0" duration="180" autoreverse="true" repeat="forever"/>
+      </storyboard>
+    </image>
+
+    <!-- AC-T04: 5 cards across, y=162..446; each card (234x268) is the item template below.
+         centerSelection keeps the active card in the middle column (col 2 of 5), scrollLoop wraps
+         the row continuously across both ends, and animateSelection slides the cards with a 250ms
+         cubic ease-out camera transition (ImageGridComponent.h). -->
+    <imagegrid name="gamegrid">
+      <pos>0 0.225</pos>
+      <size>1 0.39444</size>
+      <scrollDirection>horizontal</scrollDirection>
+      <autoLayout>5 1</autoLayout>
+      <centerSelection>true</centerSelection>
+      <scrollLoop>true</scrollLoop>
+      <animateSelection>true</animateSelection>
+      <margin>0.0125 0</margin>
+      <padding>0.01875 0.01111 0.01875 0.01111</padding>
+      <zIndex>25</zIndex>
+      <!-- AC-T19: a card is its frame, the game's box art, its Emulator/Port badge, four
+           suspend-point circles and its player count. With a template the engine draws only
+           these (GridTileComponent::applyTheme); positions are relative to the card. -->
+      <itemTemplate>
+        <ninepatch name="frame">
+          <path>./art/tile_default.png</path>
+          <cornerSize>24 24</cornerSize>
+        </ninepatch>
+        <!-- AC-T06: the gold frame fades in on the selected card without colour pulsing. -->
+        <ninepatch name="selectedframe">
+          <path>./art/tile_selected.png</path>
+          <cornerSize>24 24</cornerSize>
+          <opacity>0</opacity>
+          <storyboard event="activate">
+            <animation property="opacity" to="1" duration="120"/>
+          </storyboard>
+          <storyboard event="deactivate">
+            <animation property="opacity" to="0" duration="120"/>
+          </storyboard>
+        </ninepatch>
+        <!-- The box art: the thumbnail, else the image, as the classic grid falls back
+             (FileData::getThumbnailPath); fixed <size> gives every card uniform box dimensions. -->
+        <image name="art">
+          <path>empty({game:thumbnail}) ? {game:image} : {game:thumbnail}</path>
+          <pos>0.5 0.055</pos>
+          <origin>0.5 0</origin>
+          <size>0.86 0.72</size>
+        </image>
+        <!-- AC-T15: n64mini-flip points a ported game's cartridge field at one of two badges
+             (outline "PORT" or highlighted gold "PORT"), seated between the save circles and 1P. -->
+        <image name="flipbadge">
+          <path>{game:cartridge}</path>
+          <pos>0.585 0.885</pos>
+          <origin>0.5 0.5</origin>
+          <size>0.2735 0.0735</size>
+        </image>
+        <!-- AC-T09: a circle per suspend point. Batocera saves the N64 emulator's states as
+             <rom file>.st<slot> in /userdata/saves/n64 (es_savestates.cfg, from slot 0), so each
+             circle is filled while its slot's file exists. Hidden on the library toggle card. -->
+        <image name="slot0">
+          <path>./art/save-empty.png</path>
+          <visible>{game:rom} != "Showcase or Full.n64mini"</visible>
+          <pos>0.085 0.885</pos>
+          <origin>0 0.5</origin>
+          <size>0.0684 0.0588</size>
+        </image>
+        <image name="slot0saved">
+          <path>./art/save-full.png</path>
+          <visible>exists("/userdata/saves/n64/" + {game:rom} + ".st0")</visible>
+          <pos>0.085 0.885</pos>
+          <origin>0 0.5</origin>
+          <size>0.0684 0.0588</size>
+        </image>
+        <image name="slot1">
+          <path>./art/save-empty.png</path>
+          <visible>{game:rom} != "Showcase or Full.n64mini"</visible>
+          <pos>0.165 0.885</pos>
+          <origin>0 0.5</origin>
+          <size>0.0684 0.0588</size>
+        </image>
+        <image name="slot1saved">
+          <path>./art/save-full.png</path>
+          <visible>exists("/userdata/saves/n64/" + {game:rom} + ".st1")</visible>
+          <pos>0.165 0.885</pos>
+          <origin>0 0.5</origin>
+          <size>0.0684 0.0588</size>
+        </image>
+        <image name="slot2">
+          <path>./art/save-empty.png</path>
+          <visible>{game:rom} != "Showcase or Full.n64mini"</visible>
+          <pos>0.245 0.885</pos>
+          <origin>0 0.5</origin>
+          <size>0.0684 0.0588</size>
+        </image>
+        <image name="slot2saved">
+          <path>./art/save-full.png</path>
+          <visible>exists("/userdata/saves/n64/" + {game:rom} + ".st2")</visible>
+          <pos>0.245 0.885</pos>
+          <origin>0 0.5</origin>
+          <size>0.0684 0.0588</size>
+        </image>
+        <image name="slot3">
+          <path>./art/save-empty.png</path>
+          <visible>{game:rom} != "Showcase or Full.n64mini"</visible>
+          <pos>0.325 0.885</pos>
+          <origin>0 0.5</origin>
+          <size>0.0684 0.0588</size>
+        </image>
+        <image name="slot3saved">
+          <path>./art/save-full.png</path>
+          <visible>exists("/userdata/saves/n64/" + {game:rom} + ".st3")</visible>
+          <pos>0.325 0.885</pos>
+          <origin>0 0.5</origin>
+          <size>0.0684 0.0588</size>
+        </image>
+        <!-- AC-T19: the player count, the engine's {game:playerCount} (the highest number in
+             "1-4"); none for a game the gamelist gives no players. -->
+        <text name="players">
+          <text>{game:playerCount}P</text>
+          <visible>{game:players} != ""</visible>
+          <pos>0.915 0.885</pos>
+          <origin>1 0.5</origin>
+          <size>0.22 0.12</size>
+          <fontPath>./fonts/DejaVuSans-Bold.ttf</fontPath>
+          <fontSize>0.025</fontSize>
+          <color>E6EAF2FF</color>
+          <alignment>right</alignment>
+        </text>
+      </itemTemplate>
+    </imagegrid>
+  </view>
+</theme>
