@@ -880,9 +880,11 @@ class _FakeDevice:
     closed: bool = False
     fail_grab: bool = False
     fail_read: bool = False
+    fail_close: bool = False
     drain: int | None = None  # a pipe to empty on read, so poll() settles
 
-    def capabilities(self) -> Mapping[int, Sequence[int]]:
+    def capabilities(self, *, absinfo: bool = True) -> Mapping[int, Sequence[int]]:
+        assert not absinfo  # with absinfo, EV_ABS lists (code, AbsInfo) pairs
         return self.caps
 
     def grab(self) -> None:
@@ -890,7 +892,14 @@ class _FakeDevice:
             raise OSError("busy")
         self.grabbed = True
 
+    def ungrab(self) -> None:
+        if self.fail_grab:
+            raise OSError("busy")
+        self.grabbed = False
+
     def close(self) -> None:
+        if self.fail_close:
+            raise OSError("already gone")
         self.closed = True
 
     def read(self) -> Iterable[evdev.InputEvent]:
@@ -902,17 +911,22 @@ class _FakeDevice:
         return out
 
 
-def test_keyboards_are_grabbed_mice_watched_and_the_rest_closed(
+def test_keyboards_are_grabbed_mice_and_pads_watched_and_the_rest_closed(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     kb = _FakeDevice("AT keyboard", 3, {ecodes.EV_KEY: [ecodes.KEY_UP, ecodes.KEY_A]})
     mouse = _FakeDevice("mouse", 4, {ecodes.EV_KEY: [ecodes.BTN_LEFT]})
-    pad = _FakeDevice("pad", 5, {ecodes.EV_ABS: [0]})
+    stick = _FakeDevice("joystick", 5, {ecodes.EV_ABS: [ecodes.ABS_X]})  # no D-Pad, no buttons
     ours = _FakeDevice(tb.UINPUT_NAME, 6, {ecodes.EV_KEY: [ecodes.KEY_UP]})
     stuck = _FakeDevice("stuck", 7, {ecodes.EV_KEY: [ecodes.KEY_UP]}, fail_grab=True)
-    devs = {d.name: d for d in (kb, mouse, pad, ours, stuck)}
+    xbox = _FakeDevice("X-Box pad", 8, {ecodes.EV_ABS: [ecodes.ABS_X, ecodes.ABS_HAT0Y]})
+    buttons = _FakeDevice("pad", 9, {ecodes.EV_KEY: [ecodes.BTN_SOUTH]})
+    dpad = _FakeDevice("dpad", 10, {ecodes.EV_KEY: [ecodes.BTN_DPAD_UP]})
+    devs = {d.name: d for d in (kb, mouse, stick, ours, stuck, xbox, buttons, dpad)}
+    opened: list[str] = []
 
     def opener(path: str) -> tb.InputDevice:
+        opened.append(path)
         if path == "gone":
             raise OSError("no such device")
         return devs[path]
@@ -921,13 +935,117 @@ def test_keyboards_are_grabbed_mice_watched_and_the_rest_closed(
     assert list(found.keyboards) == [3]
     assert kb.grabbed
     assert list(found.mice) == [4]
+    assert list(found.pads) == [8, 9, 10]
     assert not mouse.grabbed
-    assert pad.closed
+    assert not xbox.grabbed  # pads are only held while the bar is open
+    assert stick.closed
     assert ours.closed
     err = capsys.readouterr().err
     assert "input gone: no such device" in err
     assert "input stuck (stuck): busy" in err
-    assert [tb.classify_device(d) for d in (kb, mouse, pad, ours)] == ["keys", "mouse", None, None]
+    kinds = [tb.classify_device(d) for d in (kb, mouse, stick, ours, xbox, buttons, dpad)]
+    assert kinds == ["keys", "mouse", None, None, "pad", "pad", "pad"]
+    # A later scan opens only what's new.
+    opened.clear()
+    devs["new pad"] = _FakeDevice("new pad", 11, {ecodes.EV_ABS: [ecodes.ABS_HAT0Y]})
+    assert found.scan([*devs, "gone"], opener) == [11]
+    assert opened == ["new pad"]
+    assert found.device(11) is devs["new pad"]
+    assert found.device(3) is kb
+    assert found.device(4) is mouse
+
+
+def test_an_unplugged_device_is_forgotten_so_a_new_one_at_its_path_is_opened() -> None:
+    pad = _FakeDevice("pad", 8, {ecodes.EV_ABS: [ecodes.ABS_HAT0Y]}, fail_close=True)
+    found = tb.open_inputs(["event8"], lambda _p: pad)
+    found.drop(8)  # its close fails: it's already gone
+    assert (found.pads, found.seen) == ({}, {})
+    again = _FakeDevice("pad", 9, {ecodes.EV_ABS: [ecodes.ABS_HAT0Y]})
+    assert found.scan(["event8"], lambda _p: again) == [9]
+    kb = _FakeDevice("kb", 3, {ecodes.EV_KEY: [ecodes.KEY_UP]})
+    found.scan(["event3"], lambda _p: kb)
+    found.drop(3)
+    assert kb.closed
+    assert found.keyboards == {}
+
+
+def test_a_pad_is_held_only_while_the_daemon_owns_the_screen(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    dev = _FakeDevice("pad", 8)
+    pad = tb.Pad(dev)
+    pad.hold(want=True)
+    assert (pad.held, dev.grabbed) == (True, True)
+    pad.hold(want=True)  # no change
+    pad.hold(want=False)
+    assert (pad.held, dev.grabbed) == (False, False)
+    dev.fail_grab = True
+    pad.hold(want=True)
+    assert not pad.held  # still the engine's
+    assert "pad pad: busy" in capsys.readouterr().err
+
+
+def _grabbed(dev: _FakeDevice) -> bool:
+    return dev.grabbed  # read through a call: mypy would keep an assert's narrowing
+
+
+def test_a_pad_changes_hands_only_with_nothing_pressed() -> None:
+    """Grabbing between a press and its release left the engine holding Up for good (43.1 VM)."""
+    dev = _FakeDevice("pad", 8)
+    pad = tb.Pad(dev)
+    abs_, key = ecodes.EV_ABS, ecodes.EV_KEY
+    pad.track(_ev(abs_, ecodes.ABS_HAT0Y, -1))  # Up is down
+    pad.track(_ev(abs_, ecodes.ABS_X, 30000))  # the stick isn't tracked
+    pad.hold(want=True)
+    assert not _grabbed(dev)  # the engine still has to see Up let go
+    pad.track(_ev(key, ecodes.BTN_SOUTH, 1))
+    pad.track(_ev(abs_, ecodes.ABS_HAT0Y, 0))
+    pad.hold(want=True)
+    assert not _grabbed(dev)  # A is still down
+    pad.track(_ev(key, ecodes.BTN_SOUTH, 2))  # a repeat: still down
+    pad.hold(want=True)
+    assert not _grabbed(dev)
+    pad.track(_ev(key, ecodes.BTN_SOUTH, 0))
+    pad.hold(want=True)
+    assert _grabbed(dev)
+    pad.track(_ev(key, ecodes.BTN_EAST, 1))  # B closes the bar while held
+    pad.hold(want=False)
+    assert _grabbed(dev)  # released only after B is let go: the engine never sees B
+    pad.track(_ev(key, ecodes.BTN_EAST, 0))
+    pad.hold(want=False)
+    assert not _grabbed(dev)
+
+
+def _is_open(topbar: tb.Topbar) -> bool:
+    return topbar.open  # read through a call: mypy would keep an assert's narrowing
+
+
+def test_a_pads_d_pad_opens_the_bar_and_its_buttons_press_and_close(tmp_path: Path) -> None:
+    rig = _rig(tmp_path)
+    router = tb.Router(rig.topbar, rig.keys, lambda: (0.0, 0.0))
+    abs_, key = ecodes.EV_ABS, ecodes.EV_KEY
+    router.pad(_ev(abs_, ecodes.ABS_HAT0Y, -1))  # D-Pad Up on the carousel
+    assert _is_open(rig.topbar)
+    router.pad(_ev(abs_, ecodes.ABS_HAT0Y, 0))  # its release: nothing
+    router.pad(_ev(abs_, ecodes.ABS_X, -32000))  # the stick: nothing
+    router.pad(_ev(abs_, ecodes.ABS_HAT0X, 1))  # Right
+    assert rig.topbar.selected == 1
+    router.pad(_ev(key, ecodes.BTN_DPAD_LEFT, 1))  # Left, on a pad whose D-Pad is buttons
+    assert rig.topbar.selected == 0
+    router.pad(_ev(key, ecodes.BTN_DPAD_LEFT, 0))
+    router.pad(_ev(key, ecodes.BTN_DPAD_LEFT, 2))  # releases and repeats: nothing
+    assert rig.topbar.selected == 0
+    router.pad(_ev(key, ecodes.BTN_EAST, 1))  # B closes
+    assert not _is_open(rig.topbar)
+    router.pad(_ev(abs_, ecodes.ABS_HAT0Y, -1))
+    router.pad(_ev(abs_, ecodes.ABS_HAT0X, 1))
+    router.pad(_ev(key, ecodes.BTN_SOUTH, 1))  # A presses Showcase/Full
+    assert rig.library.calls == ["toggle showcase"]
+    router.pad(_ev(abs_, ecodes.ABS_HAT0Y, 1))  # D-Pad Down on the carousel: the drawer
+    assert rig.drawer.open
+    router.pad(_ev(key, ecodes.BTN_SOUTH, 1))
+    assert rig.procs[0].sent() == "a\n"
+    assert rig.keys.events == []  # the engine reads the pad itself: nothing is re-sent
 
 
 def test_keys_the_daemon_uses_never_reach_the_engine_others_pass_through(
@@ -1008,7 +1126,7 @@ def test_the_loop_reads_commands_and_devices_and_ticks_each_frame(
         os.write(fd, b"toggle\n")
         os.write(kb_w, b"x")
         os.write(ms_w, b"x")
-        times = iter([0.0, 0.0])
+        times = iter([0.0, 0.0, 0.0])
         tb.serve(rig.topbar, router, inputs, tb.Loop(fd, clock=lambda: next(times), rounds=1))
         assert ticks == [1]
         # In registration order: the keyboard's Up opened the bar, the click pressed the music
@@ -1016,17 +1134,23 @@ def test_the_loop_reads_commands_and_devices_and_ticks_each_frame(
         assert rig.library.calls == ["toggle music", "toggle showcase"]
         assert not rig.topbar.open
         # Events arriving within a frame of the last tick don't tick again.
-        os.write(kb_w, b"x")
-        kb.drain = None  # stays readable: events in both rounds
-        kb.fail_read = True
-        times = iter([0.010, 0.020, 0.030])
+        os.write(ms_w, b"x")
+        mouse.drain = None  # stays readable: events in both rounds
+        times = iter([0.0, 0.010, 0.020, 0.030])
         tb.serve(rig.topbar, router, inputs, tb.Loop(fd, clock=lambda: next(times), rounds=2))
         assert ticks == [1, 1]
-        assert capsys.readouterr().err.count("input kb: unplugged") == 2
-        os.read(kb_r, 64)
+        os.read(ms_r, 64)
         # A quiet frame ticks without asking the clock.
         tb.serve(rig.topbar, router, inputs, tb.Loop(fd, clock=lambda: 1.0, rounds=1))
         assert ticks == [1, 1, 1]
+        # A device that fails to read (unplugged) is dropped from the loop.
+        os.write(kb_w, b"x")
+        kb.drain = None
+        kb.fail_read = True
+        tb.serve(rig.topbar, router, inputs, tb.Loop(fd, clock=lambda: 1.0, rounds=2))
+        assert capsys.readouterr().err.count("input kb: unplugged") == 1
+        assert kb_r not in inputs.keyboards
+        assert kb.closed
 
         def broken_read(_fd: int, _n: int) -> bytes:
             raise OSError("fifo gone")
@@ -1038,6 +1162,44 @@ def test_the_loop_reads_commands_and_devices_and_ticks_each_frame(
         assert "command fifo: fifo gone" in capsys.readouterr().err
     finally:
         for f in (fd, kb_r, kb_w, ms_r, ms_w):
+            os.close(f)
+
+
+def test_the_loop_holds_pads_while_the_bar_is_open_and_finds_new_ones(tmp_path: Path) -> None:
+    rig = _rig(tmp_path)
+    fd = tb.open_fifo(tmp_path / "cmd")
+    pad_r, pad_w = os.pipe()
+    try:
+        pad = _FakeDevice(
+            "pad",
+            pad_r,
+            {ecodes.EV_ABS: [ecodes.ABS_HAT0Y]},
+            drain=pad_r,
+            events=[
+                _ev(ecodes.EV_ABS, ecodes.ABS_HAT0Y, -1),
+                _ev(ecodes.EV_ABS, ecodes.ABS_HAT0Y, 0),
+            ],
+        )
+        router = tb.Router(rig.topbar, rig.keys, lambda: (0.0, 0.0))
+        inputs = tb.Inputs()
+        clock = iter([0.0, 2.0, 2.0, 2.0, 2.0])
+        loop = tb.Loop(
+            fd,
+            clock=lambda: next(clock),
+            rounds=1,
+            list_inputs=lambda: ["event7"],
+            open_input=lambda _p: pad,
+        )
+        os.write(pad_w, b"x")  # the pad's Up and its release arrive in the round that finds it
+        tb.serve(rig.topbar, router, inputs, loop)
+        assert list(inputs.pads) == [pad_r]
+        assert rig.topbar.open
+        assert pad.grabbed  # the engine mustn't see Left/Right/A under the open bar
+        rig.topbar.close()
+        tb.serve(rig.topbar, router, inputs, tb.Loop(fd, clock=lambda: 3.0, rounds=1))
+        assert not pad.grabbed
+    finally:
+        for f in (fd, pad_r, pad_w):
             os.close(f)
 
 

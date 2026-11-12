@@ -32,7 +32,7 @@ the full library.
 | `cad/` | Standalone parametric CadQuery 50%-scale N64 Classic Mini enclosure, 13-part print plate, diode-laser jig SVG, BOM generator, and geometry gate (`./cad/run all`). |
 | `frontend/src/n64mini/theme_schema/` | The theme validator, checked against a grammar taken from the vendored engine source. |
 | `frontend/src/n64mini/theme_assets/` | The art and music generator (Pillow). |
-| `frontend/src/n64mini/harness/` | The dev-machine harness: a Tier-1 preview renderer that ports the engine's carousel and item template (`render.py`, `carousel.py`, `template.py`, `bindings.py`), the live engine sandbox and screenshot comparison. |
+| `frontend/src/n64mini/harness/` | The dev-machine harness: a Tier-1 preview renderer that ports the engine's carousel and item template (`render.py`, `gamecarousel.py` (the theme's view), `carousel.py` (the grid), `template.py`, `bindings.py`), the live engine sandbox and screenshot comparison. |
 | `frontend/src/n64mini/console/` | The code that **runs on the console**. It may use only the standard library, plus Pillow in `strip.py`, `launch.py`, and `suspend.py` (import-linter enforces this). It covers setup, the Showcase/Full switch (`showcase.py`, `library.py`), the flip (`flip.py`), the launch wrapper (`launch.py`), the Reset button (`reset.py`), the 4-slot `NUS-006` Suspend Point List (`suspend.py`), and the strip (`strip.py`). |
 | `firmware/rp2040_reset/` | CircuitPython USB HID firmware (`code.py`) for the Radxa X4's onboard RP2040 microcontroller (`GP3` Reset switch -> `KEY_F13` -> `n64mini-reset`, AC-T18). |
 | `bundle/` | What goes onto the USB stick: the manifest `n64mini.json`, `install.sh`/`update.sh`, the boot service, the engine config and hotkeys. |
@@ -92,9 +92,11 @@ The owner's design (`highlight_1.png`), modelled on the NES/SNES Classic menu:
   circles at the bottom left (a circle fills while save state slot *n* exists), the `PORT` pill in
   the middle for ported games, and `1P`/`2P`/`4P` at the bottom right. The `'Full library'`
   (`Showcase or Full.n64mini`) card has been dropped from the carousel (`bundle/n64mini.json`).
-- **The carousel rotates around the centre card** (`centerSelection="true"`,
-  `scrollLoop="true"`, `animateSelection="true"`): the middle card is selected with the steady
-  off-white LED-highlighted frame, and moving left or right slides the row continuously.
+- **The carousel rotates around the centre card.** It is the engine's horizontal `gamecarousel`
+  view (not the `grid`, since 2026-11-12): the middle card is selected with the steady off-white
+  LED-highlighted frame, and moving left or right slides the row, wrapping round both ends. The
+  engine ignores Up/Down there, so a gamepad's D-Pad Up/Down reach the top bar and the drawer
+  just as the keyboard's do (on the grid they moved the cursor; engine fact 32).
 - **The title banner** (`y = 103..160`) is a dark console pill with an off-white `5 px` border and
   top-edge LED highlight, displaying the current game's title in white/off-white (`F2F5FAFF`).
 - **Game launch and gameplay backdrop:** launching a game flips the selected centre card over and
@@ -219,8 +221,12 @@ The owner's design (`highlight_1.png`), modelled on the NES/SNES Classic menu:
 
 **Needs the real hardware (Radxa X4):**
 
-- Time the black screen and red clock shown when a card flips. The engine rebuilds the grid on
-  every metadata change. The owner accepted it pending this timing (AC-T15).
+- The black screen and red clock shown when a card flipped came from the grid rebuilding itself
+  on every metadata change. On the gamecarousel the VM showed the badge change in place with no
+  black frame (2026-11-12); confirm on the Radxa X4 (AC-T15).
+- The gamepad path with the owner's real controllers: the daemon reads the D-Pad as a hat or as
+  `BTN_DPAD_*` buttons and `A`/`B` as `BTN_SOUTH`/`BTN_EAST`; an N64-style pad may number its
+  buttons differently (B4).
 - The C-down mapping for the flip, which depends on how the actual controller reports its
   C-buttons (AC-T15).
 - The reset button that makes a suspend point (AC-T18).

@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import itertools
 import re
 import subprocess
 from typing import TYPE_CHECKING
 
 from lxml import etree
 
+from n64mini.console import launch
 from n64mini.console.strip import SIZE as STRIP_SIZE
 from n64mini.console.strip import STRIP_DIR
+from n64mini.harness import gamecarousel
 from n64mini.paths import VENDOR_DIR
 from n64mini.theme_assets.background import BOTTOM_Y
 from n64mini.theme_assets.console_bar import CONSOLE_SIZE
@@ -79,15 +82,15 @@ def test_issue_format_outside_root(tmp_path: Path) -> None:
     assert issue.format(tmp_path) == "a.xml: error E040: msg"
 
 
-def _grid() -> etree._Element:
+def _game_list() -> etree._Element:
     root = etree.parse(str(N64_THEME.parent / "base.xml")).getroot()
-    grid = root.find("view[@name='grid']")
-    assert grid is not None
-    return grid
+    view = root.find("view[@name='gamecarousel']")
+    assert view is not None
+    return view
 
 
 def _template() -> dict[str, etree._Element]:
-    template = _grid().find("imagegrid[@name='gamegrid']/itemTemplate")
+    template = _game_list().find("gamecarousel[@name='gamecarousel']/itemTemplate")
     assert template is not None, "the cards have no item template (AC-T19)"
     return {str(c.get("name")): c for c in template.iterchildren("*")}
 
@@ -163,18 +166,18 @@ def test_each_card_shows_its_player_count_or_none() -> None:
 def test_the_details_and_the_pill_are_gone() -> None:
     """AC-T08 withdrawn (owner, 2026-11-06): no year, publisher or details plate; the circles
     on each card replace the suspend-point pill."""
-    names = {el.get("name") for el in _grid()}
+    names = {el.get("name") for el in _game_list()}
     assert not {n for n in names if n and n.startswith("detail_")}
     assert "md_savestate" not in names
-    assert _grid().find("gridtile") is None  # the template draws the cards
+    assert _game_list().find("gridtile") is None  # the template draws the cards
 
 
 def test_the_strip_is_the_selected_games_image_from_the_console() -> None:
     """AC-T20: the console draws one strip per game; the theme shows the selected game's, at
     the size the console draws it, with subset layers spinning the cursor."""
-    strip_el = _grid().find("image[@name='strip']")
-    spin_el = _grid().find("image[@name='stripspin']")
-    base_el = _grid().find("image[@name='stripbase']")
+    strip_el = _game_list().find("image[@name='strip']")
+    spin_el = _game_list().find("image[@name='stripspin']")
+    base_el = _game_list().find("image[@name='stripbase']")
     assert strip_el is not None
     assert spin_el is not None
     assert base_el is not None
@@ -191,13 +194,45 @@ def test_the_strip_is_the_selected_games_image_from_the_console() -> None:
 
 
 def test_the_highlight_walks_across_the_cards() -> None:
-    """AC-T04: centred selection with continuous carousel loop and animated camera slide."""
-    grid = _grid().find("imagegrid[@name='gamegrid']")
-    assert grid is not None
-    assert grid.findtext("centerSelection") == "true"
-    assert grid.findtext("scrollLoop") == "true"
-    assert grid.findtext("animateSelection") == "true"
-    assert grid.find("autoLayoutSelectedZoom") is None
+    """AC-T04: five cards, the selected one centred where the launch flip starts, sliding."""
+    carousel = _game_list().find("gamecarousel[@name='gamecarousel']")
+    assert carousel is not None
+    assert carousel.findtext("type") == "horizontal"
+    assert carousel.findtext("maxLogoCount") == "5"
+    assert carousel.findtext("defaultTransition") == "slide"
+    props = {str(c.tag): (c.text or "").strip() for c in carousel.iterchildren("*")}
+    lay = gamecarousel.layout(props, (1280, 720), games=5, selected=2, opacity_storyboards=True)
+    (selected,) = (c for c in lay.cards if c.selected)
+    x0, y0, x1, y1 = selected.box
+    assert (x0, y0, x1 - x0, y1 - y0) == launch.CARD_BOX  # the card the launch splash flips
+    on_screen = sorted(c.box[0] for c in lay.cards if lay.clip[0] <= c.box[0] < lay.clip[2])
+    assert [b - a for a, b in itertools.pairwise(on_screen)] == [250] * 4
+
+
+def test_up_and_down_on_the_carousel_are_left_to_the_top_bar_daemon() -> None:
+    """AC-T16: a pad's D-Pad Up/Down must reach the top bar and drawer, not move the cards.
+
+    Against the vendored engine: a horizontal gamecarousel only takes Left/Right
+    (CarouselComponent::input), while a one-row grid turns Up/Down into previous/next game
+    (ImageGridComponent::input). Checked on the 43.1 VM with a virtual pad, 2026-11-12.
+    """
+    vendor = VENDOR_DIR
+    carousel_src = (vendor / "CarouselComponent.cpp").read_text(encoding="utf-8")
+    start = carousel_src.index("bool CarouselComponent::input(")
+    horizontal = carousel_src[
+        carousel_src.index("case CarouselType::HORIZONTAL:", start) : carousel_src.index(
+            "else\n\t{", start
+        )
+    ]
+    assert 'isMappedLike("left", input)' in horizontal
+    assert '"up"' not in horizontal
+    assert '"down"' not in horizontal
+    grid_src = (vendor / "ImageGridComponent.h").read_text(encoding="utf-8")
+    assert 'if (config->isMappedLike("up", input))' in grid_src
+    carousel = _game_list().find("gamecarousel[@name='gamecarousel']")
+    assert carousel is not None
+    assert carousel.findtext("type") == "horizontal"
+    assert _game_list().find("imagegrid") is None
 
 
 def test_theme_opens_game_lists_in_the_carousel() -> None:
@@ -206,9 +241,9 @@ def test_theme_opens_game_lists_in_the_carousel() -> None:
     Without it, a console set to "automatic" picks some other view and the carousel never shows.
     """
     root = etree.parse(str(N64_THEME)).getroot()
-    assert root.get("defaultView") == "grid"
+    assert root.get("defaultView") == "gamecarousel"
     base = etree.parse(str(N64_THEME.parent / "base.xml")).getroot()
-    assert base.find("view[@name='grid']/imagegrid[@name='gamegrid']") is not None
+    assert base.find("view[@name='gamecarousel']/gamecarousel[@name='gamecarousel']") is not None
 
 
 def test_help_prompts_are_styled_and_overlays_hidden() -> None:
@@ -217,7 +252,7 @@ def test_help_prompts_are_styled_and_overlays_hidden() -> None:
     views = [v for v in base.iterchildren("view") if v.find("helpsystem[@name='help']") is not None]
     assert len(views) == 1
     named = {n.strip() for n in views[0].get("name", "").split(",")}
-    assert named == {"system", "basic", "detailed", "grid"}
+    assert named == {"system", "basic", "detailed", "gamecarousel"}
     help_el = views[0].find("helpsystem[@name='help']")
     assert help_el is not None
     assert help_el.findtext("textColor") == "00000000"
@@ -268,7 +303,7 @@ def test_menu_elements_use_names_the_engine_reads() -> None:
 def test_banner_title_scrolls_instead_of_being_cut() -> None:
     """AC-T07: sans-serif banner title (matching Fontworks Rodin Pro DB) with autoScroll."""
     base = etree.parse(str(N64_THEME.parent / "base.xml")).getroot()
-    md_name = base.find("view[@name='grid']/text[@name='md_name']")
+    md_name = base.find("view[@name='gamecarousel']/text[@name='md_name']")
     assert md_name is not None
     assert md_name.findtext("fontPath") == "./fonts/DejaVuSans-Bold.ttf"
     assert md_name.findtext("autoScroll") == "horizontal"
@@ -363,7 +398,7 @@ def test_help_prompts_sit_above_the_bottom_bar() -> None:
     pos = base.findtext("view/helpsystem[@name='help']/pos")
     assert pos is not None
     y = float(pos.split()[1]) * 720
-    strip_el = _grid().find("image[@name='strip']")
+    strip_el = _game_list().find("image[@name='strip']")
     assert strip_el is not None
     strip_y = float((strip_el.findtext("pos") or "").split()[1]) * 720
     strip_bottom = strip_y + STRIP_SIZE[1] / 2  # origin 0.5 0.5

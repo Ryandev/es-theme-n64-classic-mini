@@ -1,9 +1,10 @@
-"""Tier-1 headless preview of the theme's ``grid`` view at 1280x720.
+"""Tier-1 headless preview of the theme's game list (``gamecarousel`` or ``grid`` view) at 1280x720.
 
 This is an approximation for fast iteration, not an engine. It reads element
 properties from the theme XML (following includes and ``${variables}``). The
-carousel is laid out with the engine's own grid maths (``carousel.py``) and
-filled with generated placeholder box art standing in for the user's gamelist.
+cards are laid out with the engine's own maths for the view (``gamecarousel.py`` for the
+horizontal carousel, ``carousel.py`` for the grid) and filled with generated placeholder box art
+standing in for the user's gamelist.
 Text placement is still approximate. Only ``image`` and ``text`` elements and the carousel are
 drawn; other element types (the ``helpsystem`` help bar, for one) don't appear in the preview at
 all. Check those, and anything else that matters, on the real engine with ``./run shot``.
@@ -22,6 +23,7 @@ from lxml import etree
 from PIL import Image, ImageChops, ImageDraw, ImageFont
 
 from n64mini.console import strip
+from n64mini.harness import gamecarousel
 from n64mini.harness.bindings import Device, evaluate, player_count
 from n64mini.harness.carousel import Layout, TileMode, draw_carousel, layout
 from n64mini.harness.template import Card, TemplateChild, draw_card
@@ -110,6 +112,10 @@ class ParsedTheme:
         default_factory=lambda: {"default": {}, "selected": {}}
     )
     template: list[TemplateChild] | None = None  # the grid's itemTemplate, if it has one
+    default_view: str | None = None  # the theme's defaultView (ThemeData::parseTheme)
+    carousel_props: dict[str, str] = field(default_factory=dict[str, str])
+    carousel_template: list[TemplateChild] | None = None  # the gamecarousel's itemTemplate
+    carousel_opacity_boards: bool = False  # a card animates opacity: the engine won't fade cards
 
 
 @dataclass(frozen=True, slots=True)
@@ -160,6 +166,8 @@ class ThemeParser:
         """Parse ``theme_file`` and everything it includes."""
         if not theme_file.is_file():
             raise FileNotFoundError(f"theme XML not found: {theme_file}")
+        root = etree.parse(str(theme_file), etree.XMLParser(remove_comments=True)).getroot()
+        self.theme.default_view = root.get("defaultView")
         self._parse_file(theme_file)
         return self.theme
 
@@ -221,7 +229,14 @@ class ThemeParser:
         is_grid = "grid" in views
         for elem in view.iterchildren("*"):
             name = str(elem.get("name", ""))
-            if elem.tag == "imagegrid" and is_grid:
+            if elem.tag == "gamecarousel" and "gamecarousel" in views:
+                self.theme.carousel_props.update(self._props(elem, base))
+                if (template := elem.find("itemTemplate")) is not None:
+                    self.theme.carousel_template = self._template(template, base)
+                    self.theme.carousel_opacity_boards = any(
+                        anim.get("property") == "opacity" for anim in template.iter("animation")
+                    )
+            elif elem.tag == "imagegrid" and is_grid:
                 self.theme.grid_props.update(self._props(elem, base))
                 if (template := elem.find("itemTemplate")) is not None:
                     self.theme.template = self._template(template, base)
@@ -424,6 +439,50 @@ def _draw_grid(
         boxes.append(WireBox("grid", f"tile[{tile.index}]:{mode}", tile.box))
 
 
+def _draw_gamecarousel(
+    canvas: Image.Image, theme: ParsedTheme, z: float, boxes: list[WireBox], device: Device
+) -> None:
+    """The horizontal carousel: each card drawn from the item template, clipped to the carousel."""
+    if theme.carousel_template is None:
+        raise RenderError("a gamecarousel without an itemTemplate isn't modelled")
+    lay = gamecarousel.layout(
+        theme.carousel_props,
+        canvas.size,
+        games=len(MOCK_GAMES),
+        selected=SELECTED_INDEX,
+        opacity_storyboards=theme.carousel_opacity_boards,
+    )
+    layer = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+    for c in lay.cards:
+        x0, y0, x1, y1 = c.box
+        game = MOCK_GAMES[c.game]
+        spec = Card((x1 - x0, y1 - y0), c.selected, functools.partial(game_field, game))
+        card = draw_card(theme.carousel_template, spec, device, canvas.height)
+        if c.opacity < 1.0:
+            card.putalpha(card.getchannel("A").point([round(v * c.opacity) for v in range(256)]))
+        _paste(layer, card, c.box)
+    clip = Image.new("L", canvas.size, 0)
+    clip.paste(255, lay.clip)
+    layer.putalpha(ImageChops.multiply(layer.getchannel("A"), clip))
+    canvas.alpha_composite(layer)
+    visible = [c for c in lay.cards if c.box[2] > lay.clip[0] and c.box[0] < lay.clip[2]]
+    boxes.append(WireBox("grid", f"gamecarousel:{len(visible)} (z={int(z)})", lay.clip))
+    boxes.extend(
+        WireBox("grid", f"card[{c.game}]:{'selected' if c.selected else 'default'}", c.box)
+        for c in visible
+    )
+
+
+def _paste(layer: Image.Image, card: Image.Image, box: Box) -> None:
+    """Composite the part of a card that's on the canvas (the buffer cards lie off it)."""
+    x0, y0 = box[0], box[1]
+    left, top = max(0, x0), max(0, y0)
+    right, bottom = min(layer.width, x0 + card.width), min(layer.height, y0 + card.height)
+    if right <= left or bottom <= top:
+        return
+    layer.alpha_composite(card.crop((left - x0, top - y0, right - x0, bottom - y0)), (left, top))
+
+
 def _draw_text(canvas: Image.Image, spec: ElementSpec, boxes: list[WireBox]) -> None:
     props = spec.props
     game = MOCK_GAMES[SELECTED_INDEX]
@@ -482,26 +541,38 @@ def _wireframe(clean: Image.Image, boxes: list[WireBox]) -> Image.Image:
     return wire
 
 
-def render_grid_view(theme_file: Path, *, system: str = "n64") -> Render:
-    """Render the ``grid`` view of ``theme_file`` as clean and wireframe images."""
+_GAME_LISTS: Final = frozenset({"grid", "gamecarousel"})
+
+
+def render_view(theme_file: Path, view: str | None = None, *, system: str = "n64") -> Render:
+    """Render a game-list view of ``theme_file`` as clean and wireframe images.
+
+    The view defaults to the theme's ``defaultView``, the one a console set to "automatic" opens.
+    """
     theme = ThemeParser(system).load(theme_file)
+    view = view or theme.default_view
+    if view not in _GAME_LISTS:
+        raise RenderError(f"the preview draws a grid or gamecarousel game list, not {view!r}")
     canvas = Image.new("RGBA", (SCREEN_W, SCREEN_H), (18, 22, 34, 255))
     boxes: list[WireBox] = []
 
     layers: list[tuple[float, ElementSpec | None]] = [
         (float(spec.props.get("zIndex", "10")), spec)
-        for (view, _, _), spec in theme.elements.items()
-        if view == "grid"
+        for (v, _, _), spec in theme.elements.items()
+        if v == view
     ]
-    if theme.grid_props:
-        layers.append((float(theme.grid_props.get("zIndex", "25")), None))  # None = the grid
+    games = theme.grid_props if view == "grid" else theme.carousel_props
+    if games:
+        layers.append((float(games.get("zIndex", "25")), None))  # None = the game list
     layers.sort(key=lambda layer: layer[0])
 
     with tempfile.TemporaryDirectory(prefix="n64mini-device-") as tmp:
         device = build_device(Path(tmp))
         for z, spec in layers:
-            if spec is None:
+            if spec is None and view == "grid":
                 _draw_grid(canvas, theme, z, boxes, device)
+            elif spec is None:
+                _draw_gamecarousel(canvas, theme, z, boxes, device)
             elif not is_visible(spec, MOCK_GAMES[SELECTED_INDEX]):
                 continue
             elif spec.type == "image":
@@ -511,3 +582,8 @@ def render_grid_view(theme_file: Path, *, system: str = "n64") -> Render:
 
     clean = canvas.convert("RGB")
     return Render(clean, _wireframe(clean, boxes))
+
+
+def render_grid_view(theme_file: Path, *, system: str = "n64") -> Render:
+    """Render the ``grid`` view of ``theme_file``."""
+    return render_view(theme_file, "grid", system=system)

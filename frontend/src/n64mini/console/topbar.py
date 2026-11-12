@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import ctypes
+import functools
 import os
 import select
 import signal
@@ -106,8 +107,27 @@ DRAWER_KEYS: Final = {
     ecodes.KEY_B: "b",
     ecodes.BTN_EAST: "b",
 }
-CLOSE_KEYS: Final = frozenset({ecodes.KEY_DOWN, ecodes.KEY_ESC, ecodes.KEY_BACKSPACE, ecodes.KEY_B})
-PRESS_KEYS: Final = frozenset({ecodes.KEY_ENTER, ecodes.KEY_SPACE, ecodes.KEY_A, ecodes.KEY_Z})
+CLOSE_KEYS: Final = frozenset(
+    {ecodes.KEY_DOWN, ecodes.KEY_ESC, ecodes.KEY_BACKSPACE, ecodes.KEY_B, ecodes.BTN_EAST}
+)
+PRESS_KEYS: Final = frozenset(
+    {ecodes.KEY_ENTER, ecodes.KEY_SPACE, ecodes.KEY_A, ecodes.KEY_Z, ecodes.BTN_SOUTH}
+)
+# A pad's D-Pad, as a hat (most USB pads) or as buttons, read as the arrow keys.
+PAD_HAT: Final = {
+    (ecodes.ABS_HAT0Y, -1): ecodes.KEY_UP,
+    (ecodes.ABS_HAT0Y, 1): ecodes.KEY_DOWN,
+    (ecodes.ABS_HAT0X, -1): ecodes.KEY_LEFT,
+    (ecodes.ABS_HAT0X, 1): ecodes.KEY_RIGHT,
+}
+PAD_DPAD: Final = {
+    ecodes.BTN_DPAD_UP: ecodes.KEY_UP,
+    ecodes.BTN_DPAD_DOWN: ecodes.KEY_DOWN,
+    ecodes.BTN_DPAD_LEFT: ecodes.KEY_LEFT,
+    ecodes.BTN_DPAD_RIGHT: ecodes.KEY_RIGHT,
+}
+_HAT_AXES: Final = frozenset({ecodes.ABS_HAT0X, ecodes.ABS_HAT0Y})
+RESCAN_S: Final = 2.0  # how often to look for newly plugged-in keyboards and pads
 
 
 class TopbarError(RuntimeError):
@@ -881,12 +901,16 @@ class InputDevice(Protocol):
         """Its file descriptor."""
         ...
 
-    def capabilities(self) -> Mapping[int, Sequence[int]]:
-        """Event codes by type (no absinfo)."""
+    def capabilities(self, *, absinfo: bool = True) -> Mapping[int, Sequence[int]]:
+        """Event codes by type (called with ``absinfo=False``)."""
         ...
 
     def grab(self) -> None:
         """Take the device exclusively."""
+        ...
+
+    def ungrab(self) -> None:
+        """Give it back."""
         ...
 
     def close(self) -> None:
@@ -898,16 +922,60 @@ class InputDevice(Protocol):
         ...
 
 
-def classify_device(dev: InputDevice) -> Literal["keys", "mouse"] | None:
-    """Keyboards (anything with arrow keys) are grabbed; mice are only watched for clicks."""
+def classify_device(dev: InputDevice) -> Literal["keys", "mouse", "pad"] | None:
+    """Keyboards (anything with arrow keys) are grabbed; mice and pads are watched.
+
+    A pad is only held while the top bar or drawer is open: the engine and the emulators read
+    it themselves, and on the carousel (a horizontal gamecarousel) the engine ignores Up/Down.
+    """
     if dev.name in SKIP_DEVICES:
         return None
-    keys = dev.capabilities().get(ecodes.EV_KEY, ())
+    caps = dev.capabilities(absinfo=False)
+    keys, axes = caps.get(ecodes.EV_KEY, ()), caps.get(ecodes.EV_ABS, ())
     if ecodes.KEY_UP in keys:
         return "keys"
     if ecodes.BTN_LEFT in keys:
         return "mouse"
+    if ecodes.BTN_SOUTH in keys or ecodes.BTN_DPAD_UP in keys or ecodes.ABS_HAT0Y in axes:
+        return "pad"
     return None
+
+
+@dataclass(slots=True)
+class Pad:
+    """A gamepad, held exclusively only while the daemon owns the screen.
+
+    It's grabbed and released only with nothing on it pressed: the engine (SDL) keeps the last
+    state it saw, so grabbing between a press and its release left it holding Up for good, and
+    on the VM its next Right then scrolled the carousel without end (a hat reading "Up" after
+    Right is let go is still non-zero).
+    """
+
+    dev: InputDevice
+    held: bool = False
+    pressed: set[int] = field(default_factory=set[int])  # buttons down, D-Pad hat axes off centre
+
+    def track(self, ev: evdev.InputEvent) -> None:
+        """Note what's pressed on the pad."""
+        if ev.type == ecodes.EV_KEY or (ev.type == ecodes.EV_ABS and ev.code in _HAT_AXES):
+            if ev.value:
+                self.pressed.add(ev.code)
+            else:
+                self.pressed.discard(ev.code)
+
+    def hold(self, *, want: bool) -> None:
+        """Grab or release the pad to match ``want``, once nothing on it is pressed."""
+        if want == self.held or self.pressed:
+            return
+        try:
+            if want:
+                self.dev.grab()
+            else:
+                self.dev.ungrab()
+        except OSError as exc:
+            log(f"pad {self.dev.name}: {exc}")
+            return
+        self.held = want
 
 
 @dataclass(slots=True)
@@ -923,6 +991,17 @@ class Router:
         """Clicks press top-bar buttons; everything else from a mouse is ignored."""
         if ev.type == ecodes.EV_KEY and ev.code == ecodes.BTN_LEFT and ev.value == 1:
             self.topbar.click(*self.to_design())
+
+    def pad(self, ev: evdev.InputEvent) -> None:
+        """A pad's D-Pad press reads as an arrow key; its buttons as themselves."""
+        if ev.type == ecodes.EV_ABS and (ev.code, ev.value) in PAD_HAT:
+            code = PAD_HAT[(ev.code, ev.value)]
+        elif ev.type == ecodes.EV_KEY and ev.value == 1:
+            code = PAD_DPAD.get(ev.code, ev.code)
+        else:
+            return  # releases, repeats, sticks and triggers
+        # Not consumed: the engine reads the pad itself unless the daemon holds it.
+        self.topbar.key(code)
 
     def keyboard(self, ev: evdev.InputEvent) -> None:
         """A key the daemon uses never reaches the engine: not its press, repeats or release."""
@@ -977,32 +1056,70 @@ class UInputKeys:
 
 @dataclass(slots=True)
 class Inputs:
-    """The devices the daemon reads."""
+    """The devices the daemon reads, and every path it has looked at."""
 
     keyboards: dict[int, InputDevice] = field(default_factory=dict[int, InputDevice])
     mice: dict[int, InputDevice] = field(default_factory=dict[int, InputDevice])
+    pads: dict[int, Pad] = field(default_factory=dict[int, Pad])
+    seen: dict[str, int | None] = field(default_factory=dict[str, int | None])  # path -> fd
+
+    def device(self, fd: int) -> InputDevice:
+        """The device behind ``fd``."""
+        if fd in self.pads:
+            return self.pads[fd].dev
+        return self.keyboards.get(fd) or self.mice[fd]
+
+    def scan(self, paths: Iterable[str], opener: Callable[[str], InputDevice]) -> list[int]:
+        """Open the devices not seen before: grab keyboards, watch mice and pads; their fds."""
+        added: list[int] = []
+        for path in paths:
+            if path in self.seen:
+                continue
+            self.seen[path] = None
+            try:
+                dev = opener(path)
+            except OSError as exc:
+                log(f"input {path}: {exc}")
+                continue
+            kind = classify_device(dev)
+            try:
+                if kind == "keys":
+                    dev.grab()
+                    self.keyboards[dev.fd] = dev
+                elif kind == "mouse":
+                    self.mice[dev.fd] = dev
+                elif kind == "pad":
+                    self.pads[dev.fd] = Pad(dev)
+                else:
+                    dev.close()
+                    continue
+            except OSError as exc:
+                log(f"input {path} ({dev.name}): {exc}")
+                continue
+            self.seen[path] = dev.fd
+            added.append(dev.fd)
+        return added
+
+    def drop(self, fd: int) -> None:
+        """Forget an unplugged device, so a device plugged in at its path is opened afresh."""
+        dev = self.device(fd)
+        self.keyboards.pop(fd, None)
+        self.mice.pop(fd, None)
+        self.pads.pop(fd, None)
+        self.seen = {p: f for p, f in self.seen.items() if f != fd}
+        with contextlib.suppress(OSError):
+            dev.close()
+
+    def hold_pads(self, *, want: bool) -> None:
+        """Hold every pad while the daemon owns the screen, else let the engine have them."""
+        for pad in self.pads.values():
+            pad.hold(want=want)
 
 
 def open_inputs(paths: Iterable[str], opener: Callable[[str], InputDevice]) -> Inputs:
-    """Open every input device: grab the keyboards, watch the mice, close the rest."""
+    """Open every input device: grab the keyboards, watch the mice and pads, close the rest."""
     found = Inputs()
-    for path in paths:
-        try:
-            dev = opener(path)
-        except OSError as exc:
-            log(f"input {path}: {exc}")
-            continue
-        kind = classify_device(dev)
-        try:
-            if kind == "keys":
-                dev.grab()
-                found.keyboards[dev.fd] = dev
-            elif kind == "mouse":
-                found.mice[dev.fd] = dev
-            else:
-                dev.close()
-        except OSError as exc:
-            log(f"input {path} ({dev.name}): {exc}")
+    found.scan(paths, opener)
     return found
 
 
@@ -1015,22 +1132,48 @@ REPEAT: Final = 2  # an evdev key event's value while auto-repeating
 
 @dataclass(frozen=True, slots=True)
 class Loop:
-    """The loop's command FIFO, and (for tests) its clock and how many rounds it runs."""
+    """How the loop runs: its command FIFO and where newly plugged-in devices come from.
+
+    Tests also set its clock and how many rounds it runs.
+    """
 
     fifo_fd: int
     clock: Callable[[], float] = time.monotonic
     rounds: int | None = None  # None: forever
+    list_inputs: Callable[[], Iterable[str]] = list
+    open_input: Callable[[str], InputDevice] | None = None  # None: no hot-plugging
+
+
+def _pad_event(router: Router, pad: Pad, ev: evdev.InputEvent) -> None:
+    pad.track(ev)
+    router.pad(ev)
+
+
+def _read(dev: InputDevice, handle: Callable[[evdev.InputEvent], None]) -> bool:
+    """Feed the device's events to ``handle``; False once it has gone (unplugged)."""
+    try:
+        for ev in dev.read():
+            handle(ev)
+    except OSError as exc:
+        log(f"input {dev.name}: {exc}")
+        return False
+    return True
 
 
 def serve(topbar: Topbar, router: Router, inputs: Inputs, loop: Loop) -> None:
     """The daemon's loop: read input and commands, and keep the windows in step every frame."""
     poll = select.poll()
-    for fd in (*inputs.keyboards, *inputs.mice, loop.fifo_fd):
+    for fd in (*inputs.keyboards, *inputs.mice, *inputs.pads, loop.fifo_fd):
         poll.register(fd, select.POLLIN)
+    last_scan = loop.clock()
     last_tick = float("-inf")
     done = 0
     while loop.rounds is None or done < loop.rounds:
         done += 1
+        if loop.open_input is not None and loop.clock() - last_scan >= RESCAN_S:
+            for fd in inputs.scan(loop.list_inputs(), loop.open_input):
+                poll.register(fd, select.POLLIN)
+            last_scan = loop.clock()
         events = poll.poll(int(FRAME_S * 1000))
         if not events or loop.clock() - last_tick >= FRAME_S:
             topbar.tick()
@@ -1042,13 +1185,17 @@ def serve(topbar: Topbar, router: Router, inputs: Inputs, loop: Loop) -> None:
                 except OSError as exc:
                     log(f"command fifo: {exc}")
                 continue
-            dev = inputs.keyboards.get(fd) or inputs.mice[fd]
-            handle = router.mouse if fd in inputs.mice else router.keyboard
-            try:
-                for ev in dev.read():
-                    handle(ev)
-            except OSError as exc:
-                log(f"input {dev.name}: {exc}")
+            handle: Callable[[evdev.InputEvent], None]
+            if fd in inputs.pads:
+                handle = functools.partial(_pad_event, router, inputs.pads[fd])
+            elif fd in inputs.mice:
+                handle = router.mouse
+            else:
+                handle = router.keyboard
+            if not _read(inputs.device(fd), handle):
+                poll.unregister(fd)
+                inputs.drop(fd)
+        inputs.hold_pads(want=topbar.open or topbar.drawer.open)
 
 
 def open_fifo(path: Path) -> int:
@@ -1137,7 +1284,10 @@ def main(
     except TopbarError as exc:
         log(str(exc))
         return 2
-    serve(topbar, router, inputs, Loop(fifo_fd, rounds=rounds))
+    loop = Loop(
+        fifo_fd, rounds=rounds, list_inputs=console.list_inputs, open_input=console.open_input
+    )
+    serve(topbar, router, inputs, loop)
     return 0
 
 

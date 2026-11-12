@@ -2,7 +2,7 @@
 <theme>
   <formatVersion>7</formatVersion>
 
-  <view name="system, basic, detailed, grid">
+  <view name="system, basic, detailed, gamecarousel">
     <image name="background" extra="true">
       <pos>0 0</pos>
       <size>1 1</size>
@@ -147,7 +147,7 @@
     </text>
   </view>
 
-  <view name="grid">
+  <view name="gamecarousel">
     <!-- Dynamic Game Title inside Dark Console Pill Banner (y=103..160) -->
     <text name="md_name">
       <pos>0.5 0.18264</pos>
@@ -205,24 +205,28 @@
       </storyboard>
     </image>
 
-    <!-- AC-T04: 5 cards across, y=162..446; each card (234x268) is the item template below.
-         centerSelection keeps the active card in the middle column (col 2 of 5), scrollLoop wraps
-         the row continuously across both ends, and animateSelection slides the cards with a 250ms
-         cubic ease-out camera transition (ImageGridComponent.h). -->
-    <imagegrid name="gamegrid">
-      <pos>0 0.225</pos>
-      <size>1 0.39444</size>
-      <scrollDirection>horizontal</scrollDirection>
-      <autoLayout>5 1</autoLayout>
-      <centerSelection>true</centerSelection>
-      <scrollLoop>true</scrollLoop>
-      <animateSelection>true</animateSelection>
-      <margin>0.0125 0</margin>
-      <padding>0.01875 0.01111 0.01875 0.01111</padding>
+    <!-- AC-T04: 5 cards across, the selected one in the middle at x=523..757, y=170..438 (the
+         launch flip's CARD_BOX). The engine's horizontal gamecarousel, not an imagegrid: a one-row
+         grid turns Up/Down into previous/next game (ImageGridComponent::input), so a pad's D-Pad
+         couldn't reach the top bar or the drawer; this carousel only takes Left/Right
+         (CarouselComponent::input), and wraps round both ends. Cards sit every width/maxLogoCount
+         = 250 px (CarouselComponent::renderCarousel); logoSize is a fraction of the carousel's own
+         size in this view (getCarouselFromTheme). Selecting slides the cards over 250 ms. -->
+    <gamecarousel name="gamecarousel">
+      <type>horizontal</type>
+      <pos>0.01172 0.225</pos>
+      <size>0.97656 0.39444</size>
+      <logoSize>0.1872 0.94366</logoSize>
+      <maxLogoCount>5</maxLogoCount>
+      <logoScale>1</logoScale>
+      <minLogoOpacity>1</minLogoOpacity>
+      <defaultTransition>slide</defaultTransition>
+      <transitionSpeed>250</transitionSpeed>
       <zIndex>25</zIndex>
       <!-- AC-T19: a card is its frame, the game's box art, its Emulator/Port badge, four
            suspend-point circles and its player count. With a template the engine draws only
-           these (GridTileComponent::applyTheme); positions are relative to the card. -->
+           these (CarouselItemTemplate, via GuiComponent::loadThemedChildren); positions are
+           relative to the card. -->
       <itemTemplate>
         <ninepatch name="frame">
           <path>./art/tile_default.png</path>
@@ -240,7 +244,7 @@
             <animation property="opacity" to="0" duration="120"/>
           </storyboard>
         </ninepatch>
-        <!-- The box art: the thumbnail, else the image, as the classic grid falls back
+        <!-- The box art: the thumbnail, else the image, as the engine's own views fall back
              (FileData::getThumbnailPath); fixed <size> gives every card uniform box dimensions. -->
         <image name="art">
           <path>empty({game:thumbnail}) ? {game:image} : {game:thumbnail}</path>
@@ -329,6 +333,6 @@
           <alignment>right</alignment>
         </text>
       </itemTemplate>
-    </imagegrid>
+    </gamecarousel>
   </view>
 </theme>

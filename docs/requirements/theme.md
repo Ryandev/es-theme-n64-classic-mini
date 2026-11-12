@@ -121,7 +121,8 @@ These are verified in the vendored source, not assumed:
 25. **Batocera 43.1's engine has no `POST /input`** (it answers 404; the vendored source and the
     Windows engine are newer). Keys reach the VM's engine through QEMU (`sendkey`) instead.
 
-26. **A grid can draw its cards from an `<itemTemplate>`** (inside the `imagegrid`). The engine
+26. **A grid can draw its cards from an `<itemTemplate>`** (inside the `imagegrid`; the theme now
+    uses a gamecarousel's, engine fact 32, which takes the same children). The engine
     then draws only the template's children on each card (`GridTileComponent::applyTheme`):
     positions and sizes are fractions of the card, a missing `pos` is 0 0 and a missing `size`
     is 1 1 (`GuiComponent::loadThemedChildren`), each child is bound to its own card's game, and
@@ -155,6 +156,16 @@ These are verified in the vendored source, not assumed:
     `"instant"` (`ViewController.cpp:679-702`), the engine hands off immediately to
     `n64mini-launch.sh`, which runs the live SDL2 card-flip, cubic ease-out expansion and
     cross-fade animation while `gamesplash.xml` holds the final full-screen boot frame underneath.
+32. **A one-row grid turns Up/Down into previous/next game; a horizontal `gamecarousel` ignores
+    them.** `ImageGridComponent::input` always moves by a row on Up/Down, and with one row that's
+    one card: no theme property or version turns it off (checked to upstream master, 2026-11-12).
+    `CarouselComponent::input` (vendored) takes only Left/Right (and L2/R2, page up/down) when
+    `type` is `horizontal`, and `ISimpleGameListView` doesn't use Up/Down either. A gamecarousel
+    takes an `itemTemplate` (`CarouselItemTemplate`, any themed children, `activate`/`deactivate`
+    storyboards), spaces cards `width / maxLogoCount` apart, and reads `logoSize` as a fraction
+    of its own size in this view (`getCarouselFromTheme`). Seen on the 43.1 VM with a virtual
+    Xbox pad: Up/Down moved the grid's cursor, and did nothing on the gamecarousel. Changing a
+    card's metadata there (the flip) updates the card in place, without the grid's 1–4 s rebuild.
 
 ---
 
@@ -187,16 +198,19 @@ Every font the theme uses ships inside it, with its licence. No device font path
 
 ### AC-T04: Horizontal row of game cards
 
-The `grid` view shows a row of 5 cards. With `centerSelection`, `scrollLoop` and
-`animateSelection` enabled (owner, 2026-11-07; engine fact 28), the selected card stays in the
-middle slot and the cards rotate continuously like a carousel with a smooth slide animation. Game
-lists open in it with default settings: the theme declares `defaultView="grid"`, which the engine
-uses when the view style is "automatic".
+The `gamecarousel` view shows a row of 5 cards, 250 px apart at 720p, the selected one in the
+middle at `x = 523..757, y = 170..438` (the launch flip's `CARD_BOX`, AC-T17). Left/Right slide the
+row over 250 ms and it wraps round both ends. Up/Down do nothing in the engine, so the top bar and
+the drawer can have them on a gamepad as well as a keyboard (engine fact 32; it replaced the
+`grid` view, whose one-row grid turned Up/Down into previous/next game, 2026-11-12). Game lists
+open in it with default settings: the theme declares `defaultView="gamecarousel"`, which the
+engine uses when the view style is "automatic".
 
-- **Status:** done (on the 43.1 VM, 2026-11-07: the active card stays in the middle column and
-  pressing left or right slides the row around it with continuous wrap-around)
+- **Status:** done (on the 43.1 VM, 2026-11-07 as a grid; 2026-11-12 as the gamecarousel: the
+  same cards in the same places, the active card in the middle, Left/Right slide the row with
+  wrap-around, a pad's Up/Down leave it still)
 - **Verify:** render, engine, look
-- **Tests:** `test_n64_theme.py::test_theme_opens_game_lists_in_the_carousel`, `test_n64_theme.py::test_the_highlight_walks_across_the_cards`, `test_carousel.py::test_layout_matches_the_engine_formula_for_the_shipped_grid`
+- **Tests:** `test_n64_theme.py::test_theme_opens_game_lists_in_the_carousel`, `test_n64_theme.py::test_the_highlight_walks_across_the_cards`, `test_n64_theme.py::test_up_and_down_on_the_carousel_are_left_to_the_top_bar_daemon`, `test_gamecarousel.py::test_cards_are_spaced_by_width_over_count_with_the_cursor_centred`, `test_gamecarousel.py::test_the_model_uses_the_engines_own_numbers`
 
 ### AC-T05: Cards show each game's own box art, never art baked into the theme
 
@@ -480,19 +494,29 @@ Mini button prompts (`[D-Pad Up] Menu`, `[D-Pad Down] Save States`, `[A] Start G
 (`textColor` and `iconColor` set to `00000000`). The engine's clock and battery/network overlays
 are hidden through the `screen` view (`Window::onThemeChanged`).
 
+The prompts work on a gamepad too (RELEASE_TODO B4): the top-bar daemon reads each pad's D-Pad
+(a hat or buttons) without holding it, so the engine and the emulators still get the pad. While
+the top bar or the drawer is open it holds the pad, so Left/Right/A/B reach only the bar or the
+drawer, and it changes hands only with nothing pressed (grabbing between a press and its release
+left the engine holding Up for good, and its next Right scrolled the carousel without end). A pad
+plugged in later is picked up within 2 s. `A` presses (`BTN_SOUTH`), `B` closes (`BTN_EAST`).
+
 - **Status:** done (on the 43.1 VM, 2026-11-08: only the three Classic Mini prompts sit above the
   bottom bar; the engine's 7-button help bar, clock and battery icon are hidden. 2026-11-12, after
   the daemon became `n64mini.console.topbar`: keyboard `Up` lit Settings, `Right` moved to
-  Showcase/Full, `A` switched to Full with its toast, `Down` opened the drawer and `Esc` closed it)
+  Showcase/Full, `A` switched to Full with its toast, `Down` opened the drawer and `Esc` closed it.
+  2026-11-12 with a virtual Xbox 360 pad: D-Pad Up opened the bar with the cards still, Right
+  moved the highlight, B closed it, Down opened the drawer, B closed it, and Right then moved the
+  carousel by exactly one card; A launched the game, with the pad as player 1)
 - **Verify:** gate, engine, look
-- **Tests:** `test_n64_theme.py::test_help_prompts_are_styled_and_overlays_hidden`, `test_n64_theme.py::test_help_prompts_sit_above_the_bottom_bar`, `test_topbar.py::test_up_opens_the_bar_left_right_move_and_down_closes`, `test_topbar.py::test_on_the_carousel_down_opens_the_drawer_and_f3_toggles`, `test_topbar.py::test_keys_the_daemon_uses_never_reach_the_engine_others_pass_through`
+- **Tests:** `test_n64_theme.py::test_help_prompts_are_styled_and_overlays_hidden`, `test_n64_theme.py::test_help_prompts_sit_above_the_bottom_bar`, `test_topbar.py::test_up_opens_the_bar_left_right_move_and_down_closes`, `test_topbar.py::test_on_the_carousel_down_opens_the_drawer_and_f3_toggles`, `test_topbar.py::test_keys_the_daemon_uses_never_reach_the_engine_others_pass_through`, `test_topbar.py::test_a_pads_d_pad_opens_the_bar_and_its_buttons_press_and_close`, `test_topbar.py::test_a_pad_changes_hands_only_with_nothing_pressed`, `test_topbar.py::test_the_loop_holds_pads_while_the_bar_is_open_and_finds_new_ones`
 
 The preview doesn't draw the help bar, so check it with `./run shot`.
 
 ### AC-T19: Cards show the box art, the player count and the flip badge
 
-Each card is drawn from the grid's item template (engine fact 26): the frame (AC-T06), the
-game's box art (its thumbnail, else its image, as the classic grid fell back), its Emulator/Port
+Each card is drawn from the carousel's item template (engine facts 26, 32): the frame (AC-T06),
+the game's box art (its thumbnail, else its image, as the classic grid fell back), its Emulator/Port
 badge (AC-T15) over the foot of the art, its suspend points (AC-T09) bottom left, and its player
 count bottom right as `1P`, `2P` or `4P`. The count is the engine's `{game:playerCount}`, the
 highest number in "1-4"; a game whose gamelist has no players shows none.

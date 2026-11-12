@@ -25,6 +25,7 @@ from n64mini.harness.render import (
     is_visible,
     mock_box_art,
     render_grid_view,
+    render_view,
 )
 from n64mini.harness.values import RenderError, parse_hex_color, parse_pair
 from n64mini.paths import GOLDEN_REFERENCE
@@ -112,8 +113,8 @@ def test_heatmap_colours_by_max_channel() -> None:
 
 
 # ---------------------------------------------------------------- render + CLI
-def test_render_grid_view_draws_theme_layers() -> None:
-    rendered = render_grid_view(N64_THEME)
+def test_render_view_draws_the_themes_game_list() -> None:
+    rendered = render_view(N64_THEME)  # its defaultView: the gamecarousel
     assert rendered.clean.size == rendered.wireframe.size == (SCREEN_W, SCREEN_H)
     assert rendered.clean.tobytes() != rendered.wireframe.tobytes()
     assert rendered.clean.getpixel((0, 0)) != (18, 22, 34)  # background image was composited

@@ -9,4 +9,5 @@ Files: es-core/src/ThemeData.cpp, es-core/src/AudioManager.cpp, es-core/src/util
        es-app/src/SystemData.cpp, es-app/src/CollectionSystemManager.cpp,
        es-app/src/views/gamelist/DetailedContainer.cpp, es-app/src/guis/GuiSaveState.cpp,
        es-core/src/Scripting.cpp, es-app/src/services/HttpServerThread.cpp, es-core/src/Settings.cpp,
-       es-app/src/views/ViewController.cpp, es-app/src/main.cpp, es-core/src/Splash.cpp
+       es-app/src/views/ViewController.cpp, es-app/src/main.cpp, es-core/src/Splash.cpp,
+       es-core/src/components/CarouselComponent.cpp, es-core/src/components/CarouselComponent.h

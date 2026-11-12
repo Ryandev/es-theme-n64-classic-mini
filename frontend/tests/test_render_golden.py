@@ -17,7 +17,7 @@ from pathlib import Path
 from PIL import Image
 
 from n64mini.harness.compare import run
-from n64mini.harness.render import render_grid_view
+from n64mini.harness.render import render_view
 from n64mini.paths import GOLDEN_REFERENCE
 from tests.conftest import N64_THEME
 
@@ -28,13 +28,13 @@ def _digest(image: Image.Image) -> str:
     return hashlib.sha256(image.convert("RGB").tobytes()).hexdigest()
 
 
-def test_grid_render_matches_golden(tmp_path: Path) -> None:
-    rendered = render_grid_view(N64_THEME)
+def test_game_list_render_matches_golden(tmp_path: Path) -> None:
+    rendered = render_view(N64_THEME)
     run(reference=GOLDEN_REFERENCE, out_dir=tmp_path, theme_dir=N64_THEME.parent)
     with Image.open(tmp_path / "visual_diff_report.png") as report:
         actual = {
-            "grid_clean": _digest(rendered.clean),
-            "grid_wireframe": _digest(rendered.wireframe),
+            "game_list_clean": _digest(rendered.clean),
+            "game_list_wireframe": _digest(rendered.wireframe),
             "diff_report": _digest(report),
         }
     if os.environ.get("UPDATE_GOLDEN") == "1":

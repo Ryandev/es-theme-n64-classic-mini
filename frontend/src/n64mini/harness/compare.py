@@ -14,7 +14,7 @@ from pathlib import Path
 from PIL import Image
 
 from n64mini.harness.metrics import Metrics, compare
-from n64mini.harness.render import render_grid_view
+from n64mini.harness.render import render_view
 from n64mini.harness.report import write_report
 from n64mini.paths import GOLDEN_REFERENCE, SCREENSHOTS_DIR
 
@@ -35,7 +35,7 @@ def run(
 
     wireframe: Image.Image | None = None
     if theme_dir is not None:
-        rendered = render_grid_view(theme_dir / "theme.xml")
+        rendered = render_view(theme_dir / "theme.xml")
         actual_img, wireframe = rendered.clean, rendered.wireframe
         actual_img.save(out_dir / "xml_render_clean.png")
         wireframe.save(out_dir / "xml_render_wireframe.png")
