@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import ast
-import inspect
 from typing import TYPE_CHECKING
 
 import pytest
@@ -11,7 +9,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 from PIL import Image
 
-from n64mini.console import library, showcase, strip
+from n64mini.console import strip
 from n64mini.console.strip import (
     ART_TOP,
     CURSOR,
@@ -316,33 +314,13 @@ def test_clear_removes_strip_pngs_across_all_three_layers(tmp_path: Path) -> Non
     assert list((tmp_path / "strip-mid").iterdir()) == []
 
 
-def test_topbar_daemon_calls_match_console_signatures() -> None:
-    sh_path = REPO_ROOT / "frontend/src/n64mini/console/data/n64mini-topbar.sh"
-    sh_text = sh_path.read_text(encoding="utf-8")
-    start = sh_text.index("# n64mini-topbar-daemon")
-    end = sh_text.rindex("' </dev/null >/userdata/system/logs/n64mini-topbar.log")
-    tree = ast.parse(sh_text[start:end])
-    modules = {"showcase": showcase, "strip": strip, "library": library}
-    checked = 0
-    for node in ast.walk(tree):
-        if (
-            isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Attribute)
-            and isinstance(node.func.value, ast.Name)
-            and node.func.value.id in modules
-        ):
-            mod = modules[node.func.value.id]
-            target = getattr(mod, node.func.attr)
-            if callable(target):
-                sig = inspect.signature(target)
-                pos = [None] * len(node.args)
-                kw = {k.arg: None for k in node.keywords if k.arg is not None}
-                sig.bind(*pos, **kw)
-                checked += 1
-    assert checked >= 5
-    # Mapping overlay_win or toast_win before setting its background pixmap flashes a black frame.
-    for win_name in ("overlay_win", "toast_win"):
-        bg_idx = sh_text.index(f"x11.XSetWindowBackgroundPixmap(dpy, {win_name},")
-        clear_idx = sh_text.index(f"x11.XClearWindow(dpy, {win_name})")
-        map_idx = sh_text.index(f"x11.XMapRaised(dpy, {win_name})")
-        assert bg_idx < clear_idx < map_idx
+def test_the_topbar_launcher_only_starts_the_gated_module() -> None:
+    # The daemon used to be 650 lines of Python inside this script, outside every gate (its call
+    # signatures were checked here by parsing it). It is now n64mini.console.topbar, type-checked
+    # and tested in test_topbar.py, and the script must not grow code of its own again.
+    sh_text = (REPO_ROOT / "frontend/src/n64mini/console/data/n64mini-topbar.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "python3 -m n64mini.console.topbar" in sh_text
+    assert "python3 -c" not in sh_text
+    assert len(sh_text.splitlines()) < 15  # a launcher, not a program

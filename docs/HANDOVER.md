@@ -126,7 +126,8 @@ The owner's design (`highlight_1.png`), modelled on the NES/SNES Classic menu:
     EmulationStation itself, opening the Settings menu (`Start`) dims the top bar together with the
     rest of the background without X11 overlay flicker. Hotkeys map `KEY_F2` to `n64mini-flip` (flip
     card between `[PORT]` and `[N64]`), `KEY_F3` to `n64mini-library` (also intercepted live on the
-    carousel by `n64mini-topbar.sh`), and `KEY_F13` (`KEY_F9` in the VM) to `n64mini-reset`
+    carousel by the top-bar daemon, `n64mini.console.topbar`, which `n64mini-topbar.sh` starts; it
+    also turns `Up`/`Down` on the carousel into the top bar and the drawer), and `KEY_F13` (`KEY_F9` in the VM) to `n64mini-reset`
     (physical Reset button).
   - The **bottom bar** (`art/console.png`) sits below the help prompts and holds the crisp
     `NINTENDO 64` wordmark (white `NINTENDO` + red superscript `64`, without the black bezel,

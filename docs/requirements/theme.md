@@ -481,9 +481,11 @@ Mini button prompts (`[D-Pad Up] Menu`, `[D-Pad Down] Save States`, `[A] Start G
 are hidden through the `screen` view (`Window::onThemeChanged`).
 
 - **Status:** done (on the 43.1 VM, 2026-11-08: only the three Classic Mini prompts sit above the
-  bottom bar; the engine's 7-button help bar, clock and battery icon are hidden)
+  bottom bar; the engine's 7-button help bar, clock and battery icon are hidden. 2026-11-12, after
+  the daemon became `n64mini.console.topbar`: keyboard `Up` lit Settings, `Right` moved to
+  Showcase/Full, `A` switched to Full with its toast, `Down` opened the drawer and `Esc` closed it)
 - **Verify:** gate, engine, look
-- **Tests:** `test_n64_theme.py::test_help_prompts_are_styled_and_overlays_hidden`, `test_n64_theme.py::test_help_prompts_sit_above_the_bottom_bar`
+- **Tests:** `test_n64_theme.py::test_help_prompts_are_styled_and_overlays_hidden`, `test_n64_theme.py::test_help_prompts_sit_above_the_bottom_bar`, `test_topbar.py::test_up_opens_the_bar_left_right_move_and_down_closes`, `test_topbar.py::test_on_the_carousel_down_opens_the_drawer_and_f3_toggles`, `test_topbar.py::test_keys_the_daemon_uses_never_reach_the_engine_others_pass_through`
 
 The preview doesn't draw the help bar, so check it with `./run shot`.
 
@@ -546,7 +548,7 @@ can still swap in `local/brand.png` or `local/console.png` when present.
 
 - **Status:** done (Tier-1 preview, 2026-11-11: original cube emblem; the 43.1 VM look of 2026-11-09 predates it and needs repeating)
 - **Verify:** gate, look
-- **Tests:** `test_n64_theme.py::test_the_console_is_its_own_layer_the_bundle_can_swap`, `test_theme_assets.py::test_top_and_bottom_bars_share_console_gradient_and_reference_heights`, `test_theme_assets.py::test_committed_svgs_and_console_port_grouping`, `test_theme_assets.py::test_library_icons_and_dropdown_toasts_distinguish_showcase_and_full`, `test_theme_assets.py::test_cube_emblem_has_one_colour_per_face_and_64_on_each`, `test_theme_assets.py::test_brand_uses_the_owners_svg_when_one_is_configured`, `test_strip.py::test_sync_topbar_swaps_generated_showcase_and_full_icons`
+- **Tests:** `test_n64_theme.py::test_the_console_is_its_own_layer_the_bundle_can_swap`, `test_theme_assets.py::test_top_and_bottom_bars_share_console_gradient_and_reference_heights`, `test_theme_assets.py::test_committed_svgs_and_console_port_grouping`, `test_theme_assets.py::test_library_icons_and_dropdown_toasts_distinguish_showcase_and_full`, `test_theme_assets.py::test_cube_emblem_has_one_colour_per_face_and_64_on_each`, `test_theme_assets.py::test_brand_uses_the_owners_svg_when_one_is_configured`, `test_strip.py::test_sync_topbar_swaps_generated_showcase_and_full_icons`, `test_topbar.py::test_pressing_each_button`, `test_topbar.py::test_the_pocket_highlights_one_button_over_a_backdrop_taken_once`, `test_topbar.py::test_the_toast_drops_over_the_screen_and_expires`
 
 ### DEC-1 (was OPEN-1): Custom 4-slot `NUS-006` Suspend Point List drawer
 
