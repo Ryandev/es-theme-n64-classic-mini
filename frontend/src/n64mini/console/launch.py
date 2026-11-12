@@ -5,7 +5,8 @@ Batocera runs ``n64mini-launch.sh`` instead of ``emulatorlauncher`` for N64
 run (the command comes back NUL-separated) and ``exec``s it.
 
 On a real game launch (emulator or port), ``n64mini-launch.sh`` starts ``--animate`` in a
-detached session on the console display and delays ``0.75 s`` before ``exec``ing the game so
+detached session on the console display (its errors in
+``n64mini-launch-animation.log``) and waits ``0.9 s`` before ``exec``ing the game so
 the animation:
 1. Flips the selected centre card (``CARD_BOX``) horizontally from the game's box art
    (``front``) to the N64 boot graphic (``back``),
@@ -103,6 +104,9 @@ class _SdlRect(ctypes.Structure):
     _fields_ = [("x", ctypes.c_int), ("y", ctypes.c_int), ("w", ctypes.c_int), ("h", ctypes.c_int)]
 
 
+type Draw = tuple[str, tuple[int, int, int, int], int]  # surface, box, alpha
+
+
 class _Canvas(Protocol):
     def clear(self) -> None: ...
     def draw(self, slot: str, box: tuple[int, int, int, int], alpha: int) -> None: ...
@@ -111,35 +115,58 @@ class _Canvas(Protocol):
 
 
 class _SdlCanvas:
-    """Hardware-accelerated 1280x720 SDL2 canvas backed by ``libSDL2-2.0.so.0``."""
+    """Hardware-accelerated 1280x720 SDL2 canvas backed by ``libSDL2-2.0.so.0``.
+
+    Every SDL object it creates is checked: a NULL window, renderer or texture raises
+    ``LaunchError`` with ``SDL_GetError``'s reason, after freeing what was already made.
+    """
 
     def __init__(self, surfaces: LaunchSurfaces, sdl: ctypes.CDLL) -> None:
         self._sdl = sdl
         self._sdl.SDL_CreateWindow.restype = ctypes.c_void_p
         self._sdl.SDL_CreateRenderer.restype = ctypes.c_void_p
         self._sdl.SDL_CreateTexture.restype = ctypes.c_void_p
+        self._sdl.SDL_GetError.restype = ctypes.c_char_p
+        self._win: ctypes.c_void_p | None = None
+        self._ren: ctypes.c_void_p | None = None
+        self._textures: dict[str, ctypes.c_void_p] = {}
         if int(self._sdl.SDL_Init(_SDL_INIT_VIDEO)) != 0:
-            raise LaunchError("SDL_Init failed")
-        sw, sh = SCREEN_BOX[2], SCREEN_BOX[3]
-        win_ptr = self._sdl.SDL_CreateWindow(b"n64mini-launch", 0, 0, sw, sh, _SDL_WINDOW_FLAGS)
-        self._win = ctypes.c_void_p(win_ptr)
-        ren_ptr = self._sdl.SDL_CreateRenderer(self._win, -1, _SDL_RENDERER_ACCELERATED)
-        self._ren = ctypes.c_void_p(ren_ptr)
-        self._sdl.SDL_RenderSetLogicalSize(self._ren, sw, sh)
-        self._textures = {
-            "bg": self._upload(surfaces.bg),
-            "front": self._upload(surfaces.front),
-            "back": self._upload(surfaces.back),
-            "splash": self._upload(surfaces.splash),
-        }
+            raise LaunchError(f"SDL_Init failed: {self._error()}")
+        try:
+            sw, sh = SCREEN_BOX[2], SCREEN_BOX[3]
+            self._win = self._made(
+                self._sdl.SDL_CreateWindow(b"n64mini-launch", 0, 0, sw, sh, _SDL_WINDOW_FLAGS),
+                "SDL_CreateWindow",
+            )
+            self._ren = self._made(
+                self._sdl.SDL_CreateRenderer(self._win, -1, _SDL_RENDERER_ACCELERATED),
+                "SDL_CreateRenderer",
+            )
+            self._sdl.SDL_RenderSetLogicalSize(self._ren, sw, sh)
+            for slot in ("bg", "front", "back", "splash"):
+                self._textures[slot] = self._upload(getattr(surfaces, slot))
+        except LaunchError:
+            self.close()
+            raise
+
+    def _error(self) -> str:
+        raw = self._sdl.SDL_GetError()
+        return raw.decode(errors="replace") if isinstance(raw, bytes) and raw else "no reason given"
+
+    def _made(self, ptr: int | None, what: str) -> ctypes.c_void_p:
+        if not ptr:
+            raise LaunchError(f"{what} failed: {self._error()}")
+        return ctypes.c_void_p(ptr)
 
     def _upload(self, image: Image.Image) -> ctypes.c_void_p:
         w, h = image.size
         raw = image.tobytes("raw", "RGBA")
-        ptr = self._sdl.SDL_CreateTexture(
-            self._ren, _SDL_PIXELFORMAT_ABGR8888, _SDL_TEXTUREACCESS_STATIC, w, h
+        tex = self._made(
+            self._sdl.SDL_CreateTexture(
+                self._ren, _SDL_PIXELFORMAT_ABGR8888, _SDL_TEXTUREACCESS_STATIC, w, h
+            ),
+            "SDL_CreateTexture",
         )
-        tex = ctypes.c_void_p(ptr)
         self._sdl.SDL_UpdateTexture(tex, ctypes.c_void_p(0), raw, w * 4)
         self._sdl.SDL_SetTextureBlendMode(tex, _SDL_BLENDMODE_BLEND)
         return tex
@@ -161,9 +188,44 @@ class _SdlCanvas:
     def close(self) -> None:
         for tex in self._textures.values():
             self._sdl.SDL_DestroyTexture(tex)
-        self._sdl.SDL_DestroyRenderer(self._ren)
-        self._sdl.SDL_DestroyWindow(self._win)
+        self._textures = {}
+        if self._ren is not None:
+            self._sdl.SDL_DestroyRenderer(self._ren)
+        if self._win is not None:
+            self._sdl.SDL_DestroyWindow(self._win)
         self._sdl.SDL_Quit()
+
+
+class ImageCanvas:
+    """The same canvas in Pillow: what the tests and previews see of each frame."""
+
+    def __init__(self, surfaces: LaunchSurfaces) -> None:
+        """Start with a black screen."""
+        self._surfaces = surfaces
+        self.image = Image.new("RGBA", SCREEN_BOX[2:], (0, 0, 0, 255))
+        self.frames: list[tuple[Image.Image, int]] = []  # each presented frame and its delay
+
+    def clear(self) -> None:
+        """Black, as ``SDL_RenderClear`` with the draw colour 0 0 0 255."""
+        self.image = Image.new("RGBA", SCREEN_BOX[2:], (0, 0, 0, 255))
+
+    def draw(self, slot: str, box: tuple[int, int, int, int], alpha: int) -> None:
+        """``SDL_RenderCopy`` with blending and an alpha mod: scaled, then composited."""
+        x, y, w, h = box
+        sprite = getattr(self._surfaces, slot).resize(
+            (max(1, w), max(1, h)), Image.Resampling.BILINEAR
+        )
+        if alpha < 255:
+            a = sprite.getchannel("A").point([v * alpha // 255 for v in range(256)])
+            sprite.putalpha(a)
+        self.image.alpha_composite(sprite, (x, y))
+
+    def present(self, delay_ms: int) -> None:
+        """Keep the frame, with how long it stays up."""
+        self.frames.append((self.image.copy(), delay_ms))
+
+    def close(self) -> None:
+        """Nothing to free."""
 
 
 def ease_out(t: float) -> float:
@@ -298,24 +360,37 @@ def compose_launch_surfaces(rom_path: Path, theme_dir: Path = DEFAULT_THEME_DIR)
     return LaunchSurfaces(bg=bg, front=front, back=back, splash=splash)
 
 
-def render_flip_frame(frame: FlipFrame, surfaces: LaunchSurfaces) -> Image.Image:
-    """Render one keyframe of the launch animation onto a 1280x720 RGBA canvas."""
-    sw, sh = SCREEN_BOX[2], SCREEN_BOX[3]
-    cw = CARD_BOX[2]
-    if frame["phase"] == "crossfade":
-        return Image.blend(surfaces.back, surfaces.splash, frame["alpha"] / 255.0)
-    canvas = Image.new("RGBA", (sw, sh), (0, 0, 0, 255))
+def frame_ops(frame: FlipFrame) -> list[Draw]:
+    """What to draw for one keyframe, on a black screen; both canvases draw exactly this."""
+    sw, cw = SCREEN_BOX[2], CARD_BOX[2]
+    box = (frame["x"], frame["y"], frame["w"], frame["h"])
     if frame["phase"] == "flip":
-        canvas.alpha_composite(surfaces.bg)
-        source = surfaces.front if frame["face"] == "front" else surfaces.back
-    else:
-        bg_weight = max(0.0, (sw - frame["w"]) / (sw - cw))
-        if bg_weight > 0.0:
-            canvas = Image.blend(canvas, surfaces.bg, bg_weight)
-        source = surfaces.back
-    scaled = source.resize((max(1, frame["w"]), max(1, frame["h"])), Image.Resampling.BILINEAR)
-    canvas.alpha_composite(scaled, (frame["x"], frame["y"]))
-    return canvas
+        return [("bg", SCREEN_BOX, 255), (frame["face"], box, 255)]
+    if frame["phase"] == "expand":
+        bg_alpha = max(0, round(255 * (sw - frame["w"]) / (sw - cw)))
+        return [*([("bg", SCREEN_BOX, bg_alpha)] if bg_alpha > 0 else []), ("back", box, 255)]
+    if frame["phase"] == "crossfade":
+        return [("back", SCREEN_BOX, 255), ("splash", SCREEN_BOX, frame["alpha"])]
+    return [("splash", SCREEN_BOX, 255)]  # hold
+
+
+HOLD: Final[FlipFrame] = {
+    "phase": "hold",
+    "face": "splash",
+    "x": 0,
+    "y": 0,
+    "w": 1280,
+    "h": 720,
+    "alpha": 255,
+}
+
+
+def render_flip_frame(frame: FlipFrame, surfaces: LaunchSurfaces) -> Image.Image:
+    """Render one keyframe onto a 1280x720 RGBA image, through the console's own draw list."""
+    canvas = ImageCanvas(surfaces)
+    for op in frame_ops(frame):
+        canvas.draw(*op)
+    return canvas.image
 
 
 def _default_sdl_lib() -> ctypes.CDLL:
@@ -333,31 +408,19 @@ def play_sdl_animation(
     frame_ms: int = 16,
     canvas_factory: Callable[[LaunchSurfaces], _Canvas] = _default_canvas_factory,
 ) -> bool:
-    """Render the card-flip, ease-out expansion and cross-fade frames onto an SDL2 canvas."""
+    """Render the card-flip, ease-out expansion and cross-fade frames onto an SDL2 canvas.
+
+    Returns False, with the reason on stderr (the animation's log), if SDL can't start.
+    """
     try:
         canvas = canvas_factory(surfaces)
-    except (LaunchError, OSError):
+    except (LaunchError, OSError) as exc:
+        print(f"n64mini-launch: no animation: {exc}", file=sys.stderr)
         return False
-    sw = SCREEN_BOX[2]
-    cw = CARD_BOX[2]
-    for frame in frames:
+    for frame in [*frames, *[HOLD] * hold_steps]:
         canvas.clear()
-        box = (frame["x"], frame["y"], frame["w"], frame["h"])
-        if frame["phase"] == "flip":
-            canvas.draw("bg", SCREEN_BOX, 255)
-            canvas.draw(frame["face"], box, 255)
-        elif frame["phase"] == "expand":
-            bg_alpha = max(0, round(255 * (sw - frame["w"]) / (sw - cw)))
-            if bg_alpha > 0:
-                canvas.draw("bg", SCREEN_BOX, bg_alpha)
-            canvas.draw("back", box, 255)
-        else:
-            canvas.draw("back", SCREEN_BOX, 255)
-            canvas.draw("splash", SCREEN_BOX, frame["alpha"])
-        canvas.present(frame_ms)
-    for _ in range(hold_steps):
-        canvas.clear()
-        canvas.draw("splash", SCREEN_BOX, 255)
+        for op in frame_ops(frame):
+            canvas.draw(*op)
         canvas.present(frame_ms)
     canvas.close()
     return True

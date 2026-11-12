@@ -8,7 +8,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import ClassVar, override
+from typing import TYPE_CHECKING, ClassVar, Final, override
 
 import pytest
 from PIL import Image
@@ -17,6 +17,9 @@ from n64mini.console import engine as en
 from n64mini.console import launch as ln
 from n64mini.console.flip import BADGE_DIR, MODES_FILE
 from n64mini.console.showcase import CARD
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 PORTED = "Mario Kart 64 (U) [!].z64"
 CATALOG = {
@@ -310,13 +313,25 @@ class _FakeFunc:
         return self.ret
 
 
+class _FakeError:
+    def __init__(self, message: bytes) -> None:
+        self.message = message
+        self.restype: object = None
+
+    def __call__(self) -> bytes:
+        return self.message
+
+
 class _FakeSdl:
-    def __init__(self, init_ret: int = 0) -> None:
+    def __init__(
+        self, init_ret: int = 0, *, window: int = 0x100, renderer: int = 0x200, texture: int = 0x300
+    ) -> None:
         self.SDL_Init = _FakeFunc(init_ret)
-        self.SDL_CreateWindow = _FakeFunc(0x100)
-        self.SDL_CreateRenderer = _FakeFunc(0x200)
+        self.SDL_GetError = _FakeError(b"no display")
+        self.SDL_CreateWindow = _FakeFunc(window)
+        self.SDL_CreateRenderer = _FakeFunc(renderer)
         self.SDL_RenderSetLogicalSize = _FakeFunc(0)
-        self.SDL_CreateTexture = _FakeFunc(0x300)
+        self.SDL_CreateTexture = _FakeFunc(texture)
         self.SDL_UpdateTexture = _FakeFunc(0)
         self.SDL_SetTextureBlendMode = _FakeFunc(0)
         self.SDL_SetTextureAlphaMod = _FakeFunc(0)
@@ -332,7 +347,7 @@ class _FakeSdl:
 
 
 def test_sdl_canvas_and_animate_cli_entry_point(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """AC-T17: _SdlCanvas uploads all 4 surfaces, renders flip/expand/crossfade/hold, and closes."""
     rom = tmp_path / PORTED
@@ -353,15 +368,89 @@ def test_sdl_canvas_and_animate_cli_entry_point(
     assert len(fake.SDL_DestroyTexture.calls) == 4
     assert len(fake.SDL_Quit.calls) == 1
 
-    # SDL_Init failure returns False cleanly without crashing the launch.
+    # SDL_Init failure returns False cleanly without crashing the launch, saying why.
     current[0] = _FakeSdl(init_ret=-1)
     assert ln.play_sdl_animation(surfaces, frames) is False
+    assert "no animation: SDL_Init failed: no display" in capsys.readouterr().err
 
     current[0] = _FakeSdl(0)
     assert ln.main(["--animate", "-rom", str(rom)]) == 0
     assert ln.main(["--animate", str(rom)]) == 0
     assert ln.main(["--animate"]) == 1
     assert ln.main(["--animate", "-rom"]) == 1
+
+
+def _loader(fake: _FakeSdl) -> Callable[[str], _FakeSdl]:
+    def load(_name: str) -> _FakeSdl:
+        return fake
+
+    return load
+
+
+_NULLS: Final = [
+    (_FakeSdl(window=0), "SDL_CreateWindow", (0, 0, 0)),
+    (_FakeSdl(renderer=0), "SDL_CreateRenderer", (0, 0, 1)),
+    (_FakeSdl(texture=0), "SDL_CreateTexture", (0, 1, 1)),
+]
+
+
+@pytest.mark.parametrize("case", _NULLS)
+def test_a_null_sdl_object_fails_loud_and_frees_what_was_made(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    case: tuple[_FakeSdl, str, tuple[int, int, int]],
+) -> None:
+    """B7: a NULL window, renderer or texture used to be carried on with as a NULL pointer."""
+    fake, failed, destroyed = case
+    surfaces = ln.compose_launch_surfaces(tmp_path / PORTED, tmp_path / "theme")
+    monkeypatch.setattr(ctypes, "CDLL", _loader(fake))
+    assert ln.play_sdl_animation(surfaces, ln.flip_expand_frames()) is False
+    assert f"no animation: {failed} failed: no display" in capsys.readouterr().err
+    counts = (
+        len(fake.SDL_DestroyTexture.calls),
+        len(fake.SDL_DestroyRenderer.calls),
+        len(fake.SDL_DestroyWindow.calls),
+    )
+    assert counts == destroyed
+    assert len(fake.SDL_Quit.calls) == 1
+    assert fake.SDL_RenderPresent.calls == []
+    quiet = _FakeSdl(init_ret=-1)
+    quiet.SDL_GetError.message = b""
+    monkeypatch.setattr(ctypes, "CDLL", _loader(quiet))
+    assert ln.play_sdl_animation(surfaces, ln.flip_expand_frames()) is False
+    assert "SDL_Init failed: no reason given" in capsys.readouterr().err
+
+
+def _solid(color: tuple[int, int, int]) -> Image.Image:
+    return Image.new("RGBA", (64, 64), (*color, 255))
+
+
+def test_the_console_draws_exactly_what_the_tests_render() -> None:
+    """B7: the SDL animation and the Pillow render run one draw list (frame_ops)."""
+    red, green, blue, white = (200, 0, 0), (0, 200, 0), (0, 0, 200), (255, 255, 255)
+    surfaces = ln.LaunchSurfaces(
+        bg=_solid(red), front=_solid(green), back=_solid(blue), splash=_solid(white)
+    )
+    frames = ln.flip_expand_frames(flip_steps=2, expand_steps=2, crossfade_steps=2)
+    canvas = ln.ImageCanvas(surfaces)
+    assert ln.play_sdl_animation(
+        surfaces, frames, hold_steps=1, frame_ms=7, canvas_factory=lambda _s: canvas
+    )
+    assert [d for _, d in canvas.frames] == [7] * (len(frames) + 1)
+    for (shown, _), frame in zip(canvas.frames, [*frames, ln.HOLD], strict=True):
+        assert shown.tobytes() == ln.render_flip_frame(frame, surfaces).tobytes()
+    centre = (640, 300)
+    shots = [img for img, _ in canvas.frames]
+    # The flip: the carousel backdrop with the card's face over the centre.
+    assert shots[0].getpixel((50, 50)) == (*red, 255)
+    assert shots[1].getpixel(centre) == (*blue, 255)  # turned to the boot card
+    # The expansion ends full screen with the backdrop faded out.
+    assert shots[3].getpixel((50, 50)) == (*blue, 255)
+    # Cross-fading into the boot screen, then holding it.
+    half = shots[4].getpixel(centre)
+    assert half not in {(*blue, 255), (*white, 255)}
+    assert shots[-1].getpixel(centre) == (*white, 255)
 
 
 def test_consume_resume_args_and_decide_resume_slot(

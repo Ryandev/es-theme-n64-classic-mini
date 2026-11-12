@@ -339,9 +339,9 @@ into the N64 boot frame on a solid black background (`art/launch_splash.png`, re
 bundle by the captured emulator first frame `local/launch_splash.png`, DEC-5) instead of the
 game's screenshot.
 
-- **Status:** done (on the engine on 2026-11-07: menus styled, and launching a game flips and expands the card with ease-out and cross-fade to the N64 boot logo on black instead of the game's screenshot)
+- **Status:** done (on the engine on 2026-11-07: menus styled, and launching a game flips and expands the card with ease-out and cross-fade to the N64 boot logo on black instead of the game's screenshot. 2026-11-12, RELEASE_TODO B7: the SDL animation and the tested Pillow render now run one draw list (`frame_ops`), every SDL object is checked, and a failed animation says why in `/userdata/system/logs/n64mini-launch-animation.log`; on the 43.1 VM a launch left that log empty and a forced failure wrote `no animation: SDL_Init failed: No available video device`)
 - **Verify:** gate, engine, look
-- **Tests:** `test_n64_theme.py::test_menu_elements_use_names_the_engine_reads`, `test_n64_theme.py::test_gamesplash_shows_the_boot_frame_on_black_without_game_screenshot`, `test_theme_assets.py::test_launch_splash_is_an_emblem_on_a_black_screen`, `test_launch.py::test_flip_expand_frames_flip_centre_card_and_ease_out_to_full_screen`, `test_launch.py::test_compose_and_render_flip_frames_across_all_phases`, `test_launch.py::test_sdl_canvas_and_animate_cli_entry_point`
+- **Tests:** `test_n64_theme.py::test_menu_elements_use_names_the_engine_reads`, `test_n64_theme.py::test_gamesplash_shows_the_boot_frame_on_black_without_game_screenshot`, `test_theme_assets.py::test_launch_splash_is_an_emblem_on_a_black_screen`, `test_launch.py::test_flip_expand_frames_flip_centre_card_and_ease_out_to_full_screen`, `test_launch.py::test_compose_and_render_flip_frames_across_all_phases`, `test_launch.py::test_sdl_canvas_and_animate_cli_entry_point`, `test_launch.py::test_the_console_draws_exactly_what_the_tests_render`, `test_launch.py::test_a_null_sdl_object_fails_loud_and_frees_what_was_made`
 
 ### AC-T13: The 4-slot `NUS-006` Suspend Point List drawer
 
