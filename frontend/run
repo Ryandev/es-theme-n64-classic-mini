@@ -473,6 +473,9 @@ vm() {
         create)   vm_create ;;
         start)    vm_start ;;
         stop)     vm_stop ;;
+        status)   if vm_running; then
+                      echo "running: pid $(cat "$VM_DIR/qemu.pid"), up $(ps -o etime= -p "$(cat "$VM_DIR/qemu.pid")" | tr -d ' ')"
+                  else echo "stopped"; fi ;;
         ssh)      vm_running || abort "the VM isn't running: ./run vm start"; "${VM_SSH[@]}" "$@" ;;
         copy)     vm_running || abort "the VM isn't running"
                   scp -P 2222 -i "$VM_DIR/id_vm" -o BatchMode=yes -o UserKnownHostsFile="$VM_DIR/known_hosts" -r "${@:1:$#-1}" "root@127.0.0.1:${!#}" ;;
@@ -481,7 +484,7 @@ vm() {
         list)     qemu-img snapshot -l "$VM_DIR/base.qcow2" ;;
         shot)     vm_shot "$@" ;;
         usb)      vm_usb "$@" ;;
-        *) abort "usage: ./run vm create|start|stop|ssh [cmd]|copy SRC.. DEST|snapshot NAME|restore [NAME]|list|shot [out.png]|usb IMAGE|out" ;;
+        *) abort "usage: ./run vm create|start|stop|status|ssh [cmd]|copy SRC.. DEST|snapshot NAME|restore [NAME]|list|shot [out.png]|usb IMAGE|out" ;;
     esac
 }
 
