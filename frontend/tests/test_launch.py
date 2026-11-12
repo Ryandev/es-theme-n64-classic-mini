@@ -15,6 +15,7 @@ from PIL import Image
 
 from n64mini.console import engine as en
 from n64mini.console import launch as ln
+from n64mini.console import launch_animation as la
 from n64mini.console.flip import BADGE_DIR, MODES_FILE
 from n64mini.console.showcase import CARD
 
@@ -78,6 +79,32 @@ def test_a_flipped_game_runs_its_installed_port(console: tuple[Path, Path, Path]
     decision = ln.decide(_args(roms), roms, ports, catalog)
     assert decision["command"] == ["/ports/kart/SpaghettiKart", "--rom", str(roms / PORTED)]
     assert decision["mode"] == "port"
+
+
+def test_a_port_launch_drops_a_resume_request_instead_of_leaving_it_for_later(
+    console: tuple[Path, Path, Path], tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """B8: a suspend point picked on a Port card stayed behind and resumed a later N64 launch."""
+    roms, catalog, ports = console
+    _flip_to_port(roms)
+    ports.write_text(json.dumps({"MK64": ["/ports/kart/SpaghettiKart", "--rom", "{rom}"]}))
+    state = tmp_path / f"{PORTED}.st1"
+    state.write_bytes(b"state")
+    resume = tmp_path / "resume.json"
+    resume.write_text(json.dumps({"rom": PORTED, "slot": 1, "state_file": str(state)}))
+    decision = ln.decide(_args(roms), roms, ports, catalog, resume_file=resume)
+    assert decision["mode"] == "port"
+    assert "-state_filename" not in decision["command"]
+    assert not resume.exists()
+    assert "can't load a suspend point" in capsys.readouterr().err
+    # Flipped back, the next N64 launch starts fresh instead of resuming that old point.
+    (roms / BADGE_DIR / MODES_FILE).write_text("{}")
+    later = ln.decide(_args(roms), roms, ports, catalog, resume_file=resume)
+    assert "-state_filename" not in later["command"]
+    # With no request, a port launch says nothing.
+    _flip_to_port(roms)
+    ln.decide(_args(roms), roms, ports, catalog, resume_file=resume)
+    assert capsys.readouterr().err == ""
 
 
 @pytest.mark.parametrize(
@@ -230,7 +257,7 @@ def test_the_library_card_switches_the_list_instead_of_launching(
 
 def test_flip_expand_frames_flip_centre_card_and_ease_out_to_full_screen() -> None:
     """AC-T17: the selected centre card flips over, expands with ease-out, and cross-fades."""
-    frames = ln.flip_expand_frames(flip_steps=8, expand_steps=12, crossfade_steps=6)
+    frames = la.flip_expand_frames(flip_steps=8, expand_steps=12, crossfade_steps=6)
     flip = [f for f in frames if f["phase"] == "flip"]
     expand = [f for f in frames if f["phase"] == "expand"]
     crossfade = [f for f in frames if f["phase"] == "crossfade"]
@@ -239,11 +266,11 @@ def test_flip_expand_frames_flip_centre_card_and_ease_out_to_full_screen() -> No
     assert len(crossfade) == 6
     assert [f["face"] for f in flip] == ["front"] * 4 + ["back"] * 4
     assert flip[3]["w"] == 2  # edge-on at the midpoint of the flip
-    assert (flip[-1]["x"], flip[-1]["y"], flip[-1]["w"], flip[-1]["h"]) == ln.CARD_BOX
+    assert (flip[-1]["x"], flip[-1]["y"], flip[-1]["w"], flip[-1]["h"]) == la.CARD_BOX
     # Cubic ease-out covers 87.5% of the expansion by the halfway mark and finishes full screen.
     mid = expand[len(expand) // 2 - 1]
-    assert mid["w"] > ln.CARD_BOX[2] + 0.85 * (ln.SCREEN_BOX[2] - ln.CARD_BOX[2])
-    assert (expand[-1]["x"], expand[-1]["y"], expand[-1]["w"], expand[-1]["h"]) == ln.SCREEN_BOX
+    assert mid["w"] > la.CARD_BOX[2] + 0.85 * (la.SCREEN_BOX[2] - la.CARD_BOX[2])
+    assert (expand[-1]["x"], expand[-1]["y"], expand[-1]["w"], expand[-1]["h"]) == la.SCREEN_BOX
     assert expand[-1]["alpha"] == 255
     assert [f["face"] for f in crossfade] == ["splash"] * 6
     assert crossfade[0]["alpha"] < crossfade[-1]["alpha"] == 255
@@ -261,7 +288,7 @@ def test_compose_and_render_flip_frames_across_all_phases(tmp_path: Path) -> Non
     art.mkdir(parents=True)
 
     # 1. Missing theme files and missing game art use clean solid fallbacks.
-    surfaces_fallback = ln.compose_launch_surfaces(rom, theme)
+    surfaces_fallback = la.compose_launch_surfaces(rom, theme)
     assert surfaces_fallback.bg.size == (1280, 720)
     assert surfaces_fallback.front.size == (234, 268)
 
@@ -276,7 +303,7 @@ def test_compose_and_render_flip_frames_across_all_phases(tmp_path: Path) -> Non
         "</gameList>",
         encoding="utf-8",
     )
-    assert ln.compose_launch_surfaces(rom, theme).front.getpixel((117, 117)) == (200, 40, 40, 255)
+    assert la.compose_launch_surfaces(rom, theme).front.getpixel((117, 117)) == (200, 40, 40, 255)
 
     # 3. Gamelist relative and absolute thumbnail resolution + full theme art layers.
     gamelist_art = images / "mk64-box.png"
@@ -294,11 +321,11 @@ def test_compose_and_render_flip_frames_across_all_phases(tmp_path: Path) -> Non
         ("tile_selected.png", (234, 268), (240, 196, 48, 255)),
     ):
         Image.new("RGBA", sz, color).save(art / name)
-    surfaces = ln.compose_launch_surfaces(rom, theme)
+    surfaces = la.compose_launch_surfaces(rom, theme)
     assert surfaces.front.getpixel((117, 117)) == (40, 180, 80, 255)
 
-    frames = ln.flip_expand_frames(flip_steps=4, expand_steps=4, crossfade_steps=2)
-    rendered = [ln.render_flip_frame(f, surfaces) for f in frames]
+    frames = la.flip_expand_frames(flip_steps=4, expand_steps=4, crossfade_steps=2)
+    rendered = [la.render_flip_frame(f, surfaces) for f in frames]
     assert all(img.size == (1280, 720) for img in rendered)
 
 
@@ -352,7 +379,7 @@ def test_sdl_canvas_and_animate_cli_entry_point(
     """AC-T17: _SdlCanvas uploads all 4 surfaces, renders flip/expand/crossfade/hold, and closes."""
     rom = tmp_path / PORTED
     rom.write_bytes(b"")
-    surfaces = ln.compose_launch_surfaces(rom, tmp_path / "theme")
+    surfaces = la.compose_launch_surfaces(rom, tmp_path / "theme")
     fake = _FakeSdl(init_ret=0)
     current: list[_FakeSdl] = [fake]
 
@@ -360,8 +387,8 @@ def test_sdl_canvas_and_animate_cli_entry_point(
         return current[0]
 
     monkeypatch.setattr(ctypes, "CDLL", _cdll)
-    frames = ln.flip_expand_frames(flip_steps=2, expand_steps=2, crossfade_steps=2)
-    ok = ln.play_sdl_animation(surfaces, frames, hold_steps=2, frame_ms=1)
+    frames = la.flip_expand_frames(flip_steps=2, expand_steps=2, crossfade_steps=2)
+    ok = la.play_sdl_animation(surfaces, frames, hold_steps=2, frame_ms=1)
     assert ok is True
     assert len(fake.SDL_CreateTexture.calls) == 4
     assert len(fake.SDL_RenderPresent.calls) == len(frames) + 2
@@ -370,14 +397,14 @@ def test_sdl_canvas_and_animate_cli_entry_point(
 
     # SDL_Init failure returns False cleanly without crashing the launch, saying why.
     current[0] = _FakeSdl(init_ret=-1)
-    assert ln.play_sdl_animation(surfaces, frames) is False
+    assert la.play_sdl_animation(surfaces, frames) is False
     assert "no animation: SDL_Init failed: no display" in capsys.readouterr().err
 
     current[0] = _FakeSdl(0)
-    assert ln.main(["--animate", "-rom", str(rom)]) == 0
-    assert ln.main(["--animate", str(rom)]) == 0
-    assert ln.main(["--animate"]) == 1
-    assert ln.main(["--animate", "-rom"]) == 1
+    assert la.main(["-rom", str(rom), "-system", "n64"]) == 0
+    assert la.main([str(rom)]) == 0
+    assert la.main([]) == 2  # no game: a usage error
+    assert la.main(["-rom"]) == 2
 
 
 def _loader(fake: _FakeSdl) -> Callable[[str], _FakeSdl]:
@@ -403,9 +430,9 @@ def test_a_null_sdl_object_fails_loud_and_frees_what_was_made(
 ) -> None:
     """B7: a NULL window, renderer or texture used to be carried on with as a NULL pointer."""
     fake, failed, destroyed = case
-    surfaces = ln.compose_launch_surfaces(tmp_path / PORTED, tmp_path / "theme")
+    surfaces = la.compose_launch_surfaces(tmp_path / PORTED, tmp_path / "theme")
     monkeypatch.setattr(ctypes, "CDLL", _loader(fake))
-    assert ln.play_sdl_animation(surfaces, ln.flip_expand_frames()) is False
+    assert la.play_sdl_animation(surfaces, la.flip_expand_frames()) is False
     assert f"no animation: {failed} failed: no display" in capsys.readouterr().err
     counts = (
         len(fake.SDL_DestroyTexture.calls),
@@ -418,7 +445,7 @@ def test_a_null_sdl_object_fails_loud_and_frees_what_was_made(
     quiet = _FakeSdl(init_ret=-1)
     quiet.SDL_GetError.message = b""
     monkeypatch.setattr(ctypes, "CDLL", _loader(quiet))
-    assert ln.play_sdl_animation(surfaces, ln.flip_expand_frames()) is False
+    assert la.play_sdl_animation(surfaces, la.flip_expand_frames()) is False
     assert "SDL_Init failed: no reason given" in capsys.readouterr().err
 
 
@@ -429,17 +456,17 @@ def _solid(color: tuple[int, int, int]) -> Image.Image:
 def test_the_console_draws_exactly_what_the_tests_render() -> None:
     """B7: the SDL animation and the Pillow render run one draw list (frame_ops)."""
     red, green, blue, white = (200, 0, 0), (0, 200, 0), (0, 0, 200), (255, 255, 255)
-    surfaces = ln.LaunchSurfaces(
+    surfaces = la.LaunchSurfaces(
         bg=_solid(red), front=_solid(green), back=_solid(blue), splash=_solid(white)
     )
-    frames = ln.flip_expand_frames(flip_steps=2, expand_steps=2, crossfade_steps=2)
-    canvas = ln.ImageCanvas(surfaces)
-    assert ln.play_sdl_animation(
+    frames = la.flip_expand_frames(flip_steps=2, expand_steps=2, crossfade_steps=2)
+    canvas = la.ImageCanvas(surfaces)
+    assert la.play_sdl_animation(
         surfaces, frames, hold_steps=1, frame_ms=7, canvas_factory=lambda _s: canvas
     )
     assert [d for _, d in canvas.frames] == [7] * (len(frames) + 1)
-    for (shown, _), frame in zip(canvas.frames, [*frames, ln.HOLD], strict=True):
-        assert shown.tobytes() == ln.render_flip_frame(frame, surfaces).tobytes()
+    for (shown, _), frame in zip(canvas.frames, [*frames, la.HOLD], strict=True):
+        assert shown.tobytes() == la.render_flip_frame(frame, surfaces).tobytes()
     centre = (640, 300)
     shots = [img for img, _ in canvas.frames]
     # The flip: the carousel backdrop with the card's face over the centre.

@@ -262,7 +262,9 @@ game. (It used to show the selected game's players, year and publisher in the to
 ### AC-T09: Suspend points on each card
 
 Each card shows four circles, bottom left: circle *n* is filled while the game's save state in
-slot *n* exists (engine fact 29), through a `visible` bound to `exists(...)` (fact 27). On the
+slot *n* has something in it (engine fact 29), through a `visible` bound to
+`filesize(...) > 0` (fact 27; `filesize` is 0 for a missing file, `FileSystemUtil::getFileSize`).
+An empty file is no save, as the drawer reads it (`suspend.inspect_slots`). On the
 `Showcase or Full.n64mini` library toggle card, the four empty circles are hidden
 (`{game:rom} != "Showcase or Full.n64mini"`, owner, 2026-11-07). Nothing counts the states, so with
 Batocera's incremental slots the circles show slots 0 to 3; a state in slot 4 or later shows no
@@ -270,9 +272,10 @@ circle. This replaces the SUSPEND POINT pill in the top plate.
 
 - **Status:** done (on the 43.1 VM, 2026-11-06: with `.st0` and `.st1` for 1080 Snowboarding, its
   first two circles were filled and the other games' empty; a `.st2` made while the game ran
-  filled the third when the game ended, without a restart; empty circles hidden on the library toggle card)
+  filled the third when the game ended, without a restart; empty circles hidden on the library toggle card.
+  2026-11-12: an empty `.st2` left the third circle empty, and the drawer showed slot 3 as No Data)
 - **Verify:** render, engine
-- **Tests:** `test_n64_theme.py::test_each_card_shows_four_suspend_points_where_batocera_saves_them`, `test_harness.py::test_exists_reads_the_sandbox_console_disk`
+- **Tests:** `test_n64_theme.py::test_each_card_shows_four_suspend_points_where_batocera_saves_them`, `test_harness.py::test_exists_reads_the_sandbox_console_disk`, `test_harness.py::test_filesize_and_greater_than_read_as_the_engine_does`
 
 ### AC-T10: System view
 
@@ -366,7 +369,7 @@ replacing Batocera's 6-cell `GuiSaveState` screen (engine fact 2):
 
 - **Status:** done (on the 43.1 VM, 2026-11-09: Pending Save floating cartridge + Browse Slots verified via `vm shot`, `C-Down` save / `C-Left` poof-delete / `D-Pad Down` open & close verified, and `launch.py` verified against Batocera 43.1's `emulatorlauncher.py` / `mupenGenerator.py` `-state_filename` + `-state_slot 8`)
 - **Verify:** gate, engine, look
-- **Tests:** `test_suspend.py::test_inspect_and_load_model_across_empty_saved_and_pending_states`, `test_suspend.py::test_step_action_transitions_in_floating_and_browse_modes`, `test_suspend.py::test_compose_suspend_frame_and_keyframes_with_real_and_fallback_assets`, `test_suspend.py::test_sdl_backend_video_and_pcm_audio`, `test_suspend.py::test_interactive_loop_and_cli_main`, `test_launch.py::test_consume_resume_args_and_decide_resume_slot`, `test_n64_theme.py::test_menu_elements_use_names_the_engine_reads`
+- **Tests:** `test_suspend.py::test_inspect_and_load_model_across_empty_saved_and_pending_states`, `test_suspend.py::test_step_action_transitions_in_floating_and_browse_modes`, `test_suspend.py::test_compose_suspend_frame_and_keyframes_with_real_and_fallback_assets`, `test_suspend.py::test_sdl_backend_video_and_pcm_audio`, `test_suspend.py::test_interactive_loop_and_cli_main`, `test_launch.py::test_consume_resume_args_and_decide_resume_slot`, `test_n64_theme.py::test_menu_elements_use_names_the_engine_reads`, `test_suspend.py::test_an_unreadable_screenshot_shows_the_box_art_instead_of_crashing_the_drawer`, `test_suspend.py::test_what_does_not_change_between_frames_is_drawn_once`, `test_launch.py::test_a_port_launch_drops_a_resume_request_instead_of_leaving_it_for_later`
 
 ### AC-T14: Showcase ↔ Full library toggle
 

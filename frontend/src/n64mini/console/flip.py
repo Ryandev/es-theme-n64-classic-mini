@@ -50,6 +50,8 @@ BADGES: Final = {"emulator": "flip-emulator.png", "port": "flip-port.png"}
 PORTS_FILE: Final = Path("/userdata/system/n64mini/ports.json")  # installed ports (AC-T15)
 MODES_FILE: Final = "modes.json"  # in BADGE_DIR: {rom file name: "port"}; absent means emulator
 SELECTED_FILE: Final = Path(tempfile.gettempdir()) / "n64mini-selected"  # cleared at each boot
+# A one-shot "resume this suspend point" request from the drawer to the next launch.
+RESUME_FILE: Final = Path(tempfile.gettempdir()) / "n64mini-resume.json"
 
 
 class FlipError(Exception):

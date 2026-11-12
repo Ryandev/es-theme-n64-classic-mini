@@ -262,7 +262,9 @@
         </image>
         <!-- AC-T09: a circle per suspend point. Batocera saves the N64 emulator's states as
              <rom file>.st<slot> in /userdata/saves/n64 (es_savestates.cfg, from slot 0), so each
-             circle is filled while its slot's file exists. Hidden on the library toggle card. -->
+             circle is filled while its slot's file has something in it: the drawer counts an
+             empty file as no save, and so do the circles (filesize is 0 for a missing file).
+             Hidden on the library toggle card. -->
         <image name="slot0">
           <path>./art/save-empty.png</path>
           <visible>{game:rom} != "Showcase or Full.n64mini"</visible>
@@ -272,7 +274,7 @@
         </image>
         <image name="slot0saved">
           <path>./art/save-full.png</path>
-          <visible>exists("/userdata/saves/n64/" + {game:rom} + ".st0")</visible>
+          <visible>filesize("/userdata/saves/n64/" + {game:rom} + ".st0") &gt; 0</visible>
           <pos>0.085 0.885</pos>
           <origin>0 0.5</origin>
           <size>0.0684 0.0588</size>
@@ -286,7 +288,7 @@
         </image>
         <image name="slot1saved">
           <path>./art/save-full.png</path>
-          <visible>exists("/userdata/saves/n64/" + {game:rom} + ".st1")</visible>
+          <visible>filesize("/userdata/saves/n64/" + {game:rom} + ".st1") &gt; 0</visible>
           <pos>0.165 0.885</pos>
           <origin>0 0.5</origin>
           <size>0.0684 0.0588</size>
@@ -300,7 +302,7 @@
         </image>
         <image name="slot2saved">
           <path>./art/save-full.png</path>
-          <visible>exists("/userdata/saves/n64/" + {game:rom} + ".st2")</visible>
+          <visible>filesize("/userdata/saves/n64/" + {game:rom} + ".st2") &gt; 0</visible>
           <pos>0.245 0.885</pos>
           <origin>0 0.5</origin>
           <size>0.0684 0.0588</size>
@@ -314,7 +316,7 @@
         </image>
         <image name="slot3saved">
           <path>./art/save-full.png</path>
-          <visible>exists("/userdata/saves/n64/" + {game:rom} + ".st3")</visible>
+          <visible>filesize("/userdata/saves/n64/" + {game:rom} + ".st3") &gt; 0</visible>
           <pos>0.325 0.885</pos>
           <origin>0 0.5</origin>
           <size>0.0684 0.0588</size>

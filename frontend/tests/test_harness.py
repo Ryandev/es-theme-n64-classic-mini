@@ -542,7 +542,7 @@ def test_bound_expressions_evaluate_like_the_engine(
 @pytest.mark.parametrize(
     ("expr", "match"),
     [
-        ("{game:rom} ? 1 : 2", "isn't modelled"),  # numbers aren't modelled
+        ("{game:rom} < 2", "isn't modelled"),  # only > of the number comparisons
         ('{game:rom} ? "a" : "b"', "a condition must be true or false"),
         ('"a" + exists("/b")', "'\\+' joins text only"),
         ('exists(empty(""))', r"exists\(\) takes text"),
@@ -557,6 +557,24 @@ def test_an_expression_the_preview_cannot_model_fails_loud(
 ) -> None:
     with pytest.raises(RenderError, match=match):
         evaluate(expr, _fields, Device(tmp_path))
+
+
+def test_filesize_and_greater_than_read_as_the_engine_does(tmp_path: Path) -> None:
+    """AC-T09: a save's circle is filled only while its file has something in it."""
+    device = Device(tmp_path)
+    saves = tmp_path / "userdata/saves/n64"
+    saves.mkdir(parents=True)
+    (saves / "full.st0").write_bytes(b"state")
+    (saves / "empty.st0").write_bytes(b"")
+    full = 'filesize("/userdata/saves/n64/full.st0")'
+    assert evaluate(full, _fields, device) == "5"
+    assert evaluate(f"{full} > 0", _fields, device) is True
+    assert evaluate('filesize("/userdata/saves/n64/empty.st0") > 0', _fields, device) is False
+    assert evaluate('filesize("/userdata/saves/n64/none.st0") > 0', _fields, device) is False
+    # As Value::toNumber: atof of text (a leading number, else 0), true/false as 1/0.
+    assert evaluate('"2.5x" > 2', _fields, device) is True
+    assert evaluate('"x" > 0', _fields, device) is False
+    assert evaluate('exists("/userdata/saves/n64/full.st0") > 0', _fields, device) is True
 
 
 def test_bound_text_is_substituted_not_evaluated() -> None:

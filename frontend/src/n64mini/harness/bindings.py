@@ -2,8 +2,10 @@
 
 A bound property (``{game:rom}`` and the like) is either substituted (text) or evaluated as an
 expression (``BindingManager.cpp``): string literals, ``+``, ``==``/``!=``, the ``c ? a : b``
-ternary, and the methods ``exists(path)`` and ``empty(value)`` (``THEMES_BINDINGS.md``). Only
-that subset is modelled; anything else raises ``RenderError`` rather than being guessed.
+ternary, numbers and ``>`` (which compares as numbers, ``MathExpr.cpp``), and the methods
+``exists(path)``, ``empty(value)`` and ``filesize(path)`` (0 for a missing file,
+``FileSystemUtil::getFileSize``). Only that subset is modelled; anything else raises
+``RenderError`` rather than being guessed.
 
 Absolute device paths (``/userdata/...``) resolve under a sandbox folder standing in for the
 console's disk, so ``exists()`` and bound image paths read real files.
@@ -24,7 +26,8 @@ if TYPE_CHECKING:
 type Value = str | bool
 
 _TOKEN_RE: Final = re.compile(
-    r'\s*(?:(?P<str>"[^"]*")|(?P<bind>\{game:\w+\})|(?P<op>==|!=|[+?:()])|(?P<name>[A-Za-z_]\w*))'
+    r'\s*(?:(?P<str>"[^"]*")|(?P<bind>\{game:\w+\})|(?P<num>\d+(?:\.\d+)?)'
+    r"|(?P<op>==|!=|[+?:()>])|(?P<name>[A-Za-z_]\w*))"
 )
 BINDING_RE: Final = re.compile(r"\{game:(\w+)\}")
 
@@ -111,10 +114,12 @@ class _Parser:
 
     def _comparison(self) -> Value:
         left = self._concat()
-        if self._peek() not in {"==", "!="}:
+        if self._peek() not in {"==", "!=", ">"}:
             return left
         op = self._take()[1]
         right = self._concat()
+        if op == ">":  # numbers, as the engine's Value::toNumber (atof) reads them
+            return _number(left) > _number(right)
         return (left == right) == (op == "==")
 
     def _concat(self) -> Value:
@@ -131,17 +136,30 @@ class _Parser:
         kind, tok = self._take()
         if kind == "str":
             return tok[1:-1]
+        if kind == "num":
+            return tok
         if kind == "bind":
             m = BINDING_RE.fullmatch(tok)
             return self.field(m.group(1) if m else tok)
-        if kind == "name" and tok in {"exists", "empty"}:
+        if kind == "name" and tok in {"exists", "empty", "filesize"}:
             self._take("(")
             arg = self._ternary()
             self._take(")")
             if isinstance(arg, bool):
                 raise RenderError(f"binding {self.text!r}: {tok}() takes text")
+            if tok == "filesize":
+                file = self.device.path(arg)
+                return str(file.stat().st_size) if file.is_file() else "0"
             return self.device.path(arg).exists() if tok == "exists" else arg == ""
         raise RenderError(f"binding {self.text!r} isn't modelled ({tok!r})")
+
+
+def _number(value: Value) -> float:
+    """``Value::toNumber``: true/false are 1/0, text is read like ``atof`` (0 if no number)."""
+    if isinstance(value, bool):
+        return float(value)
+    m = re.match(r"\s*[+-]?(\d+(\.\d*)?|\.\d+)", value)
+    return float(m.group(0)) if m else 0.0
 
 
 def evaluate(text: str, field: Callable[[str], str], device: Device) -> Value:

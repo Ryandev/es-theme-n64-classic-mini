@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 
 from lxml import etree
 
-from n64mini.console import launch
+from n64mini.console import launch_animation
 from n64mini.console.strip import SIZE as STRIP_SIZE
 from n64mini.console.strip import STRIP_DIR
 from n64mini.harness import gamecarousel
@@ -128,7 +128,8 @@ def _saves_pattern() -> tuple[str, str, int]:
 
 
 def test_each_card_shows_four_suspend_points_where_batocera_saves_them() -> None:
-    """AC-T09: circle n is filled while the default N64 emulator's save state n exists."""
+    """AC-T09: circle n is filled while the default N64 emulator's save state n has something in
+    it (an empty one is no save, as the drawer reads it: suspend.inspect_slots)."""
     directory, pattern, first = _saves_pattern()
     assert pattern == "{{romfilename}}.st{{slot0}}"
     cards = _template()
@@ -140,7 +141,7 @@ def test_each_card_shows_four_suspend_points_where_batocera_saves_them() -> None
         file = pattern.replace("{{romfilename}}", '" + {game:rom} + "').replace(
             "{{slot0}}", str(first + n)
         )
-        assert saved.findtext("visible") == f'exists("/userdata/saves/{directory}/{file}")'
+        assert saved.findtext("visible") == f'filesize("/userdata/saves/{directory}/{file}") > 0'
         assert cards[f"slot{n}"].findtext("pos") == saved.findtext("pos")
 
 
@@ -204,7 +205,12 @@ def test_the_highlight_walks_across_the_cards() -> None:
     lay = gamecarousel.layout(props, (1280, 720), games=5, selected=2, opacity_storyboards=True)
     (selected,) = (c for c in lay.cards if c.selected)
     x0, y0, x1, y1 = selected.box
-    assert (x0, y0, x1 - x0, y1 - y0) == launch.CARD_BOX  # the card the launch splash flips
+    assert (
+        x0,
+        y0,
+        x1 - x0,
+        y1 - y0,
+    ) == launch_animation.CARD_BOX  # the card the launch splash flips
     on_screen = sorted(c.box[0] for c in lay.cards if lay.clip[0] <= c.box[0] < lay.clip[2])
     assert [b - a for a, b in itertools.pairwise(on_screen)] == [250] * 4
 

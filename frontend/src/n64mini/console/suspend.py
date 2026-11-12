@@ -23,23 +23,21 @@ import math
 import os
 import select
 import sys
-import tempfile
 import wave
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Final, Literal, Protocol, TypedDict
 
 from PIL import Image, ImageDraw, ImageFont
 
-from n64mini.console.flip import SELECTED_FILE
+from n64mini.console.flip import RESUME_FILE, SELECTED_FILE
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
 SAVES_DIR: Final = Path("/userdata/saves/n64")
 DEFAULT_THEME_DIR: Final = Path("/userdata/themes/n64-classic-mini")
-RESUME_FILE: Final = Path(tempfile.gettempdir()) / "n64mini-resume.json"
 SLOT_COUNT: Final = 4
 EXIT_CLOSED: Final = 0
 EXIT_LAUNCH: Final = 10
@@ -188,6 +186,21 @@ class SuspendAssets:
     buttons: dict[str, Image.Image]
     font_path: Path
     fallback_thumb: Image.Image
+    # What doesn't change between frames, drawn once: fonts, each cart with its picture and date,
+    # the prompt bar for each mode (it took a frame ~26 ms on the console; RELEASE_TODO B8).
+    fonts: dict[int, ImageFont.FreeTypeFont | ImageFont.ImageFont] = field(
+        default_factory=dict[int, ImageFont.FreeTypeFont | ImageFont.ImageFont], compare=False
+    )
+    carts: dict[tuple[int, Path | None, int, str], Image.Image] = field(
+        default_factory=dict[tuple[int, Path | None, int, str], Image.Image], compare=False
+    )
+    bars: dict[str, Image.Image] = field(default_factory=dict[str, Image.Image], compare=False)
+
+    def font(self, size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+        """The theme's font at ``size``, loaded once."""
+        if size not in self.fonts:
+            self.fonts[size] = _font(self.font_path, size)
+        return self.fonts[size]
 
 
 class SuspendBackend(Protocol):
@@ -491,7 +504,35 @@ def load_suspend_assets(
     )
 
 
+def _slot_shot(shot_path: Path | None, size: tuple[int, int], assets: SuspendAssets) -> Image.Image:
+    """The slot's screenshot, else the game's box art.
+
+    A screenshot that won't decode (cut short by a power cut, say) shows the box art and is
+    logged: the save state itself is fine, and a crash here would close the drawer for good.
+    """
+    if shot_path is not None and shot_path.is_file():
+        try:
+            return _load_rgba(shot_path, size, (28, 34, 48, 255))
+        except (OSError, ValueError) as exc:  # UnidentifiedImageError is an OSError
+            print(f"n64mini-suspend: unreadable screenshot {shot_path}: {exc}", file=sys.stderr)
+    return assets.fallback_thumb.resize(size, Image.Resampling.BILINEAR)
+
+
 def _render_cart_with_shot(
+    base_cart: Image.Image,
+    assets: SuspendAssets,
+    shot_path: Path | None,
+    label: str,
+) -> Image.Image:
+    """The cart with its picture and date, drawn once per (art, picture, picture's mtime, date)."""
+    mtime = shot_path.stat().st_mtime_ns if shot_path is not None and shot_path.is_file() else 0
+    key = (id(base_cart), shot_path, mtime, label)
+    if key not in assets.carts:
+        assets.carts[key] = _draw_cart_with_shot(base_cart, assets, shot_path, label)
+    return assets.carts[key]
+
+
+def _draw_cart_with_shot(
     base_cart: Image.Image,
     assets: SuspendAssets,
     shot_path: Path | None,
@@ -505,15 +546,12 @@ def _render_cart_with_shot(
     pw, ph = px1 - px0, py1 - py0
     footer_h = round(25 * SLOT_H / 230)
     well = Image.new("RGBA", (SLOT_W, SLOT_H), (0, 0, 0, 0))
-    if shot_path is not None and shot_path.is_file():
-        shot = _load_rgba(shot_path, (pw, ph - footer_h), (28, 34, 48, 255))
-    else:
-        shot = assets.fallback_thumb.resize((pw, ph - footer_h), Image.Resampling.BILINEAR)
+    shot = _slot_shot(shot_path, (pw, ph - footer_h), assets)
     well.paste(shot, (px0, py0))
     draw = ImageDraw.Draw(well)
     draw.rectangle((px0, py1 - footer_h, px1, py1), fill=(10, 12, 18, 248))
     draw.line([(px0, py1 - footer_h), (px1, py1 - footer_h)], fill=(58, 66, 82, 255), width=1)
-    face = _font(assets.font_path, 12)
+    face = assets.font(12)
     bbox = draw.textbbox((0, 0), label, font=face)
     fx = px0 + (pw - (bbox[2] - bbox[0])) / 2 - bbox[0]
     fy = py1 - footer_h + (footer_h - (bbox[3] - bbox[1])) / 2 - bbox[1]
@@ -543,7 +581,7 @@ def _draw_slot_tab(canvas: Image.Image, assets: SuspendAssets, slot_idx: int, sl
         fill=(182, 188, 202, 255),
         width=2,
     )
-    face = _font(assets.font_path, 16)
+    face = assets.font(16)
     num = str(slot_idx + 1)
     bbox = draw.textbbox((0, 0), num, font=face)
     nx = tx0 + (tab_w - 2 - (bbox[2] - bbox[0])) / 2 - bbox[0]
@@ -556,7 +594,7 @@ def _draw_slots(
 ) -> None:
     sy = SLOT_Y + drawer_dy
     draw = ImageDraw.Draw(canvas, "RGBA")
-    empty_face = _font(assets.font_path, 16)
+    empty_face = assets.font(16)
     for info in model.slots:
         sx = SLOT_XS[info.slot]
         _draw_slot_tab(canvas, assets, info.slot, sy)
@@ -617,7 +655,7 @@ def _draw_floating_save(
     )
     draw.line([(px0 + 8, py0 + 3), (px0 + pill_w - 8, py0 + 3)], fill=(255, 242, 168, 235), width=2)
     c_icon = assets.buttons["c_down"]
-    face = _font(assets.font_path, 17)
+    face = assets.font(17)
     bbox = draw.textbbox((0, 0), "Save", font=face)
     cw = c_icon.width + 8 + (bbox[2] - bbox[0])
     icx = int(px0 + (pill_w - cw) // 2)
@@ -652,19 +690,27 @@ def _prompt_items(model: SuspendModel, assets: SuspendAssets) -> list[tuple[Imag
 def _draw_prompt_bar(
     canvas: Image.Image, model: SuspendModel, assets: SuspendAssets, drawer_dy: int
 ) -> None:
-    y_bar = PROMPT_BAR_Y + drawer_dy
+    mode = "browse" if model.pending is None else model.pending.kind
+    if mode not in assets.bars:
+        assets.bars[mode] = _prompt_bar(model, assets)
+    canvas.alpha_composite(assets.bars[mode], (0, PROMPT_BAR_Y + drawer_dy))
+
+
+def _prompt_bar(model: SuspendModel, assets: SuspendAssets) -> Image.Image:
+    """The red prompt bar for the model's mode, on a transparent screen-wide strip."""
     bx0, bx1, bh = 112, 1168, 40
-    draw = ImageDraw.Draw(canvas, "RGBA")
+    bar = Image.new("RGBA", (SCREEN_SIZE[0], bh + 1), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(bar, "RGBA")
     draw.rounded_rectangle(
-        (bx0, y_bar, bx1, y_bar + bh),
+        (bx0, 0, bx1, bh),
         radius=7,
         fill=(198, 34, 46, 255),
         outline=(112, 16, 24, 255),
         width=2,
     )
-    draw.line([(bx0 + 6, y_bar + 2), (bx1 - 6, y_bar + 2)], fill=(238, 86, 96, 180), width=1)
+    draw.line([(bx0 + 6, 2), (bx1 - 6, 2)], fill=(238, 86, 96, 180), width=1)
     items = _prompt_items(model, assets)
-    face = _font(assets.font_path, 15)
+    face = assets.font(15)
     gap_it, gap_grp = 7, 26
     widths = [
         ic.width
@@ -673,15 +719,16 @@ def _draw_prompt_bar(
         for ic, lbl in items
     ]
     cx = (SCREEN_SIZE[0] - (sum(widths) + gap_grp * (len(items) - 1))) // 2
-    cy = y_bar + bh // 2
+    cy = bh // 2
     for (ic, lbl), gw in zip(items, widths, strict=True):
-        canvas.alpha_composite(ic, (cx, cy - ic.height // 2))
+        bar.alpha_composite(ic, (cx, cy - ic.height // 2))
         bb = draw.textbbox((0, 0), lbl, font=face)
         tx = cx + ic.width + gap_it - bb[0]
         ty = cy - (bb[3] - bb[1]) / 2 - bb[1]
         draw.text((tx + 1, ty + 1), lbl, font=face, fill=(64, 8, 12, 220))
         draw.text((tx, ty), lbl, font=face, fill=(250, 252, 255, 255))
         cx += gw + gap_grp
+    return bar
 
 
 def _draw_poof_overlay(

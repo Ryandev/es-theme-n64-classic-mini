@@ -510,3 +510,50 @@ def test_closed_input_closes_the_drawer_without_deleting_the_reset_suspend_point
     assert model.pending is not None
     assert (tmp_path / f"{ROM}.pending").read_bytes() == b"from-reset"
     assert shot.read_bytes() == shot_bytes
+
+
+def test_an_unreadable_screenshot_shows_the_box_art_instead_of_crashing_the_drawer(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """RELEASE_TODO B8: a corrupt slot picture used to crash the drawer every time it opened."""
+    (tmp_path / f"{ROM}.st0").write_bytes(b"state")
+    (tmp_path / f"{ROM}.st0.png").write_bytes(b"\x89PNG\r\n\x1a\n cut short")
+    (tmp_path / f"{ROM}.st1").write_bytes(b"state")
+    model = sp.load_model(tmp_path, ROM)
+    assert model.slots[0].shot_path is not None  # it's there; it just won't decode
+    box_art = Image.new("RGBA", (160, 120), (200, 20, 20, 255))
+    assets = sp.load_suspend_assets(THEME_DIR, fallback_thumb=box_art)
+    frame = sp.compose_suspend_frame(model, assets)
+    assert "unreadable screenshot" in capsys.readouterr().err
+    # Slot 0 (corrupt picture) looks just like slot 1 (no picture): both show the box art.
+    x0, x1 = sp.SLOT_XS[0], sp.SLOT_XS[1]
+    y = sp.DRAWER_Y + 150
+    assert frame.getpixel((x0 + 120, y)) == frame.getpixel((x1 + 120, y))
+
+
+def test_what_does_not_change_between_frames_is_drawn_once(tmp_path: Path) -> None:
+    """RELEASE_TODO B8: each frame redrew the carts and the prompt bar (~26 ms on the console)."""
+    (tmp_path / f"{ROM}.st0").write_bytes(b"state")
+    shot = tmp_path / f"{ROM}.st0.png"
+    Image.new("RGBA", (64, 48), (10, 200, 30, 255)).save(shot)
+    model = sp.load_model(tmp_path, ROM)
+    assets = sp.load_suspend_assets(THEME_DIR)
+    first = sp.compose_suspend_frame(model, assets)
+    carts, bars = dict(assets.carts), dict(assets.bars)
+    assert len(carts) == 1
+    assert set(bars) == {"browse"}
+    again = sp.compose_suspend_frame(model, assets)
+    assert again.tobytes() == first.tobytes()
+    assert assets.carts == carts  # nothing redrawn
+    # A new picture for the slot (a fresh save) is drawn, not served from the cache.
+    Image.new("RGBA", (64, 48), (200, 10, 30, 255)).save(shot)
+    later = shot.stat().st_mtime_ns + 10**9
+    os.utime(shot, ns=(later, later))
+    changed = sp.compose_suspend_frame(model, assets)
+    assert len(assets.carts) == 2  # the old and the new picture
+    assert changed.tobytes() != first.tobytes()
+    # The prompt bar for a pending point is a different bar.
+    (tmp_path / f"{ROM}.pending").write_bytes(b"pending")
+    sp.compose_suspend_frame(sp.load_model(tmp_path, ROM), assets)
+    assert set(assets.bars) == {"browse", "reset"}
+    assert assets.font(15) is assets.font(15)

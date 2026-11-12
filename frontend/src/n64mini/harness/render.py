@@ -333,7 +333,7 @@ def build_device(root: Path) -> Device:
             f"<thumbnail>./media/{game.slug}.png</thumbnail><players>{game.players}</players></game>"
         )
         for slot in game.suspend_slots:
-            (saves / f"{game.rom}.st{slot}").write_bytes(b"")
+            (saves / f"{game.rom}.st{slot}").write_bytes(b"state")  # an empty one is no save
     (roms / "gamelist.xml").write_text(f"<gameList>{''.join(entries)}</gameList>", encoding="utf-8")
     strip.generate(roms, device.path(MOCK_STRIPS), {".z64"})
     return device
