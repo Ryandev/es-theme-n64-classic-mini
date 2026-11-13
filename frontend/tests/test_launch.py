@@ -228,6 +228,40 @@ def test_the_shell_wrapper_execs_exactly_the_chosen_command(
     assert received.read_bytes().split(b"\0")[:-1] == [a.encode() for a in sent]
 
 
+def test_the_wrapper_turns_the_led_green_for_the_game_and_red_after(
+    console: tuple[Path, Path, Path], tmp_path: Path
+) -> None:
+    """Power LED (owner 2026-11-13): the game sees ``G`` already sent; ``R`` follows its exit,
+    even a failed one, and the game's own exit status comes through."""
+    roms, _, _ = console
+    serial_dir = tmp_path / "by-id"
+    serial_dir.mkdir()
+    dev = serial_dir / "usb-n64mini_Console_LED_and_RESET_E660C0D1-if00"
+    dev.write_bytes(b"")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    seen = tmp_path / "seen_during_game"
+    stub = bin_dir / "emulatorlauncher"
+    stub.write_text(f'#!/bin/bash\ncp "{dev}" "{seen}"\nexit 3\n')
+    stub.chmod(0o755)
+    env = {
+        **os.environ,
+        "PATH": f"{bin_dir}:{Path(sys.executable).parent}:{os.environ['PATH']}",
+        "N64MINI_SERIAL_DIR": str(serial_dir),
+    }
+    result = subprocess.run(
+        [str(SCRIPT), *_args(roms)],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+    assert result.returncode == 3, result.stderr
+    assert seen.read_bytes() == b"G"
+    assert dev.read_bytes() == b"GR"
+
+
 def test_a_failure_with_no_engine_to_show_it_stays_in_the_log(
     capsys: pytest.CaptureFixture[str], screen: type[_Screen]
 ) -> None:

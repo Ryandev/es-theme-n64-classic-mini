@@ -12,4 +12,12 @@ if [ -f /userdata/themes/n64-classic-mini/art/launch_splash.png ] && [ "${comman
         >>/userdata/system/logs/n64mini-launch-animation.log 2>&1
     sleep 0.90
 fi
-exec "${command[@]}"
+if [ "${command[0]}" = "setsid" ]; then
+    exec "${command[@]}"  # detached: it returns at once, so the LED stays on the menu colour
+fi
+# Power LED: green while the game runs, red again after (n64mini.console.led; owner 2026-11-13).
+python3 -m n64mini.console.led game || true
+status=0
+"${command[@]}" || status=$?
+python3 -m n64mini.console.led menu || true
+exit "$status"

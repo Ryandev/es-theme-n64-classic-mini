@@ -1,5 +1,10 @@
 """Golden-image regression for the Tier-1 renderer and the diff report.
 
+This proves the render is *unchanged*, not that it is *right*: ``assets/golden_reference.png`` is
+a snapshot of the theme's own output (rebuilt from it in aa92d75), so comparing against it can't
+catch a design mistake. How close the theme is to the owner's design is ``./run design-check``,
+which scores the render against the private mock-up (D1, 2026-11-13).
+
 Pixels are compared by SHA-256 of the raw RGB bytes, so any change to layout,
 z-order, fonts, colours or wireframe labels fails. After an *intentional*
 change, review the new PNGs and refresh the hashes with:

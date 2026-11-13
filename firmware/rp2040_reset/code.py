@@ -13,7 +13,12 @@
 #   - LED `Kingbright L-93WEGW` (1 red anode, 2 common cathode, 3 green anode):
 #       red anode -> 330 R -> header pin 7 (GP4); green anode -> 330 R -> pin 29 (GP7);
 #       common cathode -> pin 9 (GND)
+#
+# LED (owner, 2026-11-13): RED in the Batocera menu, GREEN while a game runs. The RP2040 can't see
+# which, so the console tells it over the USB serial console: the launch wrapper sends "G" before
+# a game and "R" after it (n64mini.console.led). Red too while USB is still coming up.
 
+import sys
 import time
 import board
 import digitalio
@@ -41,15 +46,22 @@ led_green = digitalio.DigitalInOut(LED_GREEN[1])
 led_green.direction = digitalio.Direction.OUTPUT
 
 keyboard = None
+in_game = False
 was_pressed = False
 last_change = time.monotonic()
 
 while True:
     now = time.monotonic()
     host_on = bool(supervisor.runtime.usb_connected)
-    # The RP2040 only runs while the PC is on: red while USB is still coming up, then green
-    led_red.value = not host_on
-    led_green.value = host_on
+    while supervisor.runtime.serial_bytes_available:
+        command = sys.stdin.read(1)
+        if command in ("G", "R"):
+            in_game = command == "G"
+    if not host_on:
+        in_game = False  # the PC went away mid-game: start again from the menu colour
+    green = host_on and in_game
+    led_red.value = not green
+    led_green.value = green
 
     if host_on and keyboard is None:
         try:

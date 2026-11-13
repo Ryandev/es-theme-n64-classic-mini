@@ -28,6 +28,8 @@ REPO_ROOT: Final = Path(
 )
 
 VENDOR_DIR: Final = FRONTEND_ROOT / "vendor" / "batocera-emulationstation"
+# A snapshot of the theme's own render: it proves "unchanged", never "matches the design". The
+# design reference is the owner's private mock-up (``./run design-check``).
 GOLDEN_REFERENCE: Final = FRONTEND_ROOT / "assets" / "golden_reference.png"
 SVG_ASSETS_DIR: Final = FRONTEND_ROOT / "assets" / "svg"
 DEFAULT_BRAND_TEXT: Final = "CLASSIC 64"

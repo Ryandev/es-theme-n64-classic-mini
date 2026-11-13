@@ -93,6 +93,20 @@ audit() {
     uv run pip-audit --skip-editable --progress-spinner off
 }
 
+# The owner's design mock-up, the independent reference for how the menu should look (D1). It has
+# real box art and the N64 logo, so it stays in the private workspace and this target only runs
+# on the owner's machine. The floor is the score measured 2026-11-13 (91.09%): hold or improve.
+DESIGN_MOCKUP="${N64MINI_DESIGN_MOCKUP:-$REPO_ROOT/../private/research/highlight_1.png}"
+DESIGN_FLOOR=91.0
+
+design_check() {
+    step "theme render against the owner's design mock-up (private)"
+    [ -f "$DESIGN_MOCKUP" ] || abort "design mock-up not found at $DESIGN_MOCKUP (owner's machine only)"
+    uv run n64mini-compare-theme --theme-dir ../themes/n64-classic-mini \
+        --reference "$DESIGN_MOCKUP" --out-dir "${1:-screenshots/design}" \
+        --min-similarity "$DESIGN_FLOOR"
+}
+
 mutate() {
     step "mutation testing (mutmut, ratcheted) -- slow"
     rm -rf mutants
@@ -500,6 +514,7 @@ case "$target" in
     mutate)   mutate "$@" ;;
     engine)   engine "$@" ;;
     shot)     shot "$@" ;;
+    design-check) design_check "$@" ;;
     vm)       vm "$@" ;;
     bundle)   bundle "$@" ;;
     stick)    stick "$@" ;;
@@ -519,6 +534,8 @@ Targets:
   secrets   detect-secrets over everything a commit could include
   audit     pip-audit for known CVEs (needs network)
   mutate    mutmut mutation testing, ratcheted (~10 min)
+  design-check [D]  score the theme render against the owner's private design mock-up
+            (highlight_1.png); fails below the recorded floor. Report in D
   engine    run the real EmulationStation on the theme and print its reduced log (WSL2)
   shot      screenshot the real engine: ./run shot 'a,right' [out.png] [full|showcase] (WSL2)
             SHOT_FLIP=<rom file> also gives that game the Port badge before the capture

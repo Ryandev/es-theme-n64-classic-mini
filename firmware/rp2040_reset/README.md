@@ -29,9 +29,9 @@ Header pins and GPIOs below are from Radxa's X4 GPIO table
 | **`RESET` Switch** (`Omron SS-5GL`, right `X = +32.32 mm`) | **`COM`** (Bottom terminal nearest hinge) | — | **40-pin Header Pin 6** | **`GND`** (leave top `NC` terminal unconnected) |
 | **`POWER` Switch** (`Omron SS-5GL`, left `X = -32.32 mm`) | **`NO`** (Middle terminal, Normally Open) | — | **Signal side of the X4's onboard power button `K1`** | **`PMC_PWRBTN_N`** (active-LOW: a press wakes the N100 from standby, or asks Batocera to shut down) |
 | **`POWER` Switch** (`Omron SS-5GL`, left `X = -32.32 mm`) | **`COM`** (Bottom terminal nearest hinge) | — | **Ground side of `K1`** | **`GND`** (leave top `NC` terminal unconnected) |
-| **Front Status LED** (`Kingbright L-93WEGW`, `X = 0`) | **Pin 1 — Red Anode** (`625 nm`, outer lead on flat side) | **`330 Ω` 0.25W resistor** | **40-pin Header Pin 7** | **`GP4`** (`OUTPUT`: on while the RP2040 is starting, before USB is up; it can't show standby, see above) |
+| **Front Status LED** (`Kingbright L-93WEGW`, `X = 0`) | **Pin 1 — Red Anode** (`625 nm`, outer lead on flat side) | **`330 Ω` 0.25W resistor** | **40-pin Header Pin 7** | **`GP4`** (`OUTPUT`: **red in Batocera's menu**, and while USB is still coming up; it can't show standby, see above) |
 | **Front Status LED** (`Kingbright L-93WEGW`, `X = 0`) | **Pin 2 — Common Cathode** (centre longest lead) | — | **40-pin Header Pin 9** | **`GND`** |
-| **Front Status LED** (`Kingbright L-93WEGW`, `X = 0`) | **Pin 3 — Green Anode** (`565 nm`, opposite outer lead) | **`330 Ω` 0.25W resistor** | **40-pin Header Pin 29** | **`GP7`** (`OUTPUT`: on while the console is on) |
+| **Front Status LED** (`Kingbright L-93WEGW`, `X = 0`) | **Pin 3 — Green Anode** (`565 nm`, opposite outer lead) | **`330 Ω` 0.25W resistor** | **40-pin Header Pin 29** | **`GP7`** (`OUTPUT`: **green while a game runs**: the launch wrapper sends `G` before a game and `R` after it over the RP2040's USB serial console, `n64mini.console.led`) |
 
 LED pinout from Kingbright's L-93WEGW datasheet: 1 anode red, 2 common cathode, 3 anode green.
 
@@ -42,8 +42,10 @@ LED pinout from Kingbright's L-93WEGW datasheet: 1 anode red, 2 common cathode, 
    Batocera.
 2. Copy the Raspberry Pi Pico CircuitPython `.uf2` image to `RPI-RP2`; it re-enumerates as
    `CIRCUITPY`.
-3. Copy `adafruit_hid` into `CIRCUITPY/lib/` and copy [`code.py`](code.py) from this folder to
-   `CIRCUITPY/code.py`.
+3. Copy `adafruit_hid` into `CIRCUITPY/lib/` and copy [`code.py`](code.py) and
+   [`boot.py`](boot.py) from this folder to `CIRCUITPY/`. `boot.py` names the device `n64mini` on
+   USB, which is how the console finds its serial console for the LED; it takes effect after a
+   hard reset.
 
 ## How Batocera handles `KEY_F13`
 
