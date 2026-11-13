@@ -115,6 +115,13 @@ correctness. A lack of recent releases means little there.
   objection.
 - **Verify before presenting.** No speculation stated as fact; say what you checked.
 - **Comments explain why, not what.** The code says what.
+- **Never end a turn to wait.** A background job only wakes the agent if the session is still
+  being driven; an agent that ends its turn "waiting" can sit idle for hours (it did, a whole
+  night). Keep working on the next item while a job runs; if there is nothing else, schedule a
+  wake-up first. Unattended runs use `/loop` with no interval or one under 60 minutes, and the
+  agent never asks a question during one: decisions go into the run's report.
+- **Done means pushed and seen.** Say "verified" only for what you ran and watched, and "set up"
+  or "done" only once it is committed and pushed; name the commit.
 - **Leave nothing running, and know what is.** Stop the VM (`./run vm stop`) when the task that
   needed it ends. Before telling the human "nothing is running", list the machine's busiest
   processes (`ps -eo pid,etime,pcpu,args --sort=-pcpu | head`) and account for each one, and check
@@ -195,6 +202,8 @@ Lessons recorded so far:
 | The Batocera test VM was left running ~19 h (4 cores at full load, fans flat out). Asked what was running, the agent checked only CAD jobs and said nothing was | "Leave nothing running, and know what is" (Agent conduct) and `./run vm status`. A test that leaked a `hotkeygen` process for 19 h is open in the release todo |
 | A test's fake `hotkeygen` waited in a loop for a file the test created only after the command returned; when it didn't, the fake looped for 19 h at the owner's desk | The fake gives up after 20 s and the release is in a `finally`; `tests/conftest.py` fails the run if any process launched from pytest's temp folder outlives the tests, and kills its process group (red-confirmed with a planted leak) |
 | The RP2040 firmware and its wiring table put RESET, POWER and the green LED on GP3, GP2 and GP5; Radxa's X4 header has GP29, GP28 and GP7 on those pins, and the schematic shows the RP2040 is off in standby, so the red standby light could never work | Radxa's header table is vendored (`frontend/vendor/radxa-x4/`, checked against the schematic); `tests/test_firmware_pins.py` holds `code.py` and the wiring README to it (red-confirmed with the old pins) |
+| The card flip was reported as verified when it had not been run, and "repos set up" was claimed with nothing pushed | "Done means pushed and seen" (Agent conduct): name the commit, say verified only for what was run |
+| Asked to work overnight, the agent ended its turn to wait for a background job and sat idle for 8 hours; the owner's `/loop 60m` safety net stalled on a cloud-or-local question nobody was there to answer | "Never end a turn to wait" (Agent conduct): keep working or schedule a wake-up; unattended loops use no interval or under 60 minutes and never ask questions |
 | Deleting a tracked file (before staging the deletion) failed the spell gate: the git-derived file set still listed the missing path | `candidates()` lists only files that exist, pinned by `test_a_deleted_tracked_file_is_not_in_the_file_sets` (red-confirmed) |
 | The top-bar daemon was 650 lines of Python inside `python3 -c '...'` in a shell script: no lint, types or tests. It read the selected game from `/var/run/n64mini-selected` while `flip` writes it to the temp dir, so its selected-card-first ordering never ran; and its command line held its whole source, so `pkill -f n64mini.console.suspend` killed it | The daemon is the gated module `n64mini.console.topbar` (100 % branch coverage, checked on the VM); `test_the_topbar_launcher_only_starts_the_gated_module` keeps the script a launcher; `test_the_daemon_reads_the_selection_where_the_launcher_writes_it` ties the path to `flip` |
 | A gamepad's D-Pad Up/Down couldn't reach the top bar: the engine's one-row grid turns Up/Down into previous/next game (`ImageGridComponent::input`, no setting in any version). Only a virtual pad on the VM showed it; the keyboard path hid it because the daemon grabs keyboards | The game list is the engine's horizontal `gamecarousel`, which ignores Up/Down (engine fact 32), pinned by `test_up_and_down_on_the_carousel_are_left_to_the_top_bar_daemon` against the vendored `CarouselComponent.cpp`; the preview ports it (`harness/gamecarousel.py`, `test_gamecarousel.py`) |
