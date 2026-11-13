@@ -178,7 +178,8 @@ type = "forbidden"
 source_modules = ["n64mini.console"]
 forbidden_modules = ["n64mini.harness", "n64mini.theme_assets", "n64mini.theme_schema", "n64mini.paths", "PIL", "lxml"]
 # Batocera 43.1 ships Pillow 11.0.0 (its configgen bezel code imports it; checked in the 43.1 VM,
-# 2026-11-06, with JPEG support). Only the strip drawing (AC-T20), launch card-flip splash
+# 2026-11-06 with JPEG support, and again 2026-11-13: `import PIL` -> 11.0.0, Python 3.12.8;
+# lxml is absent). Only the strip drawing (AC-T20), launch card-flip splash
 # composition (AC-T17, launch_animation only: deciding a launch must not wait on it), Suspend Point List drawer composition (AC-T13) and the top-bar daemon's
 # pocket and toast (AC-T21) need it, so only they may.
 ignore_imports = [

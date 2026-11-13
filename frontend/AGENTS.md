@@ -115,9 +115,10 @@ Regenerate it with `uv run n64mini-generate-assets`.
 - Use `tmp_path` fixtures for files. Tests never write into the repo.
 - Gate tests (`tests/test_n64_theme.py`) assert the real theme is valid. When
   you accept a known warning, add it to `ACCEPTED_WARNINGS` with a TODO.
-- Code that runs on the device may only import what the Batocera image ships (not yet
-  verified for `PIL`/`lxml`, so assume stdlib only). When that package exists, add an
-  import-linter `forbidden` contract for it.
+- Code that runs on the device may only import what the Batocera image ships: the standard
+  library, plus Pillow in the modules allowed in `pyproject.toml` (Batocera 43.1 ships Pillow
+  11.0.0, checked in the 43.1 VM on 2026-11-06 and again 2026-11-13). It does **not** ship
+  `lxml`. The import-linter contract "Console code uses the standard library only" enforces this.
 
 ## Theme XML
 
