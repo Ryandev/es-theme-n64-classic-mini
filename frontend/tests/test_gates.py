@@ -13,11 +13,13 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
 
 from n64mini.paths import FRONTEND_ROOT, REPO_ROOT
+from tests.conftest import processes_under
 
 BIN = Path(sys.executable).parent
 RUN = FRONTEND_ROOT / "run"
@@ -194,3 +196,20 @@ def test_no_game_rom_can_be_committed() -> None:
     assert candidates, "the file set is empty, so this check would see nothing"
     roms = [f for f in candidates if f.lower().endswith(_ROM_SUFFIXES)]
     assert roms == [], f"ROM files a commit could include: {roms[:5]}"
+
+
+def test_a_process_left_running_from_a_tests_temp_folder_is_found(tmp_path: Path) -> None:
+    """The session guard in conftest.py relies on this to fail a run that leaks a process."""
+    script = tmp_path / "leak.sh"
+    script.write_text("#!/bin/sh\nsleep 30\n")
+    script.chmod(0o755)
+    proc = subprocess.Popen([str(script)], start_new_session=True)
+    try:
+        deadline = time.monotonic() + 3.0
+        while proc.pid not in processes_under(tmp_path) and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert proc.pid in processes_under(tmp_path)
+    finally:
+        proc.kill()
+        proc.wait()
+    assert proc.pid not in processes_under(tmp_path)

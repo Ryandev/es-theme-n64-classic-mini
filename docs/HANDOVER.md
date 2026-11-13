@@ -205,9 +205,9 @@ The owner's design (`highlight_1.png`), modelled on the NES/SNES Classic menu:
   `21.60 mm` central front apron, carry `4x` separately-printed Light Cool Grey N64 controller port
   replicas (`Ø10.88 mm` OD with `R = 0.50 mm` front rim fillet and D-shaped 3-pin cavities, `J-08`)
   concealing `4x TE Connectivity 292303-7` USB-A receptacles, and flank the central Clear PETG
-  lenticular Power LED light pipe (`6.36 x 1.76 mm` front lens + 3-lead `Kingbright L-819EGW`
-  Red/Green bi-colour LED in `lower_tub` driven by `firmware/rp2040_reset/code.py`: `Red = Power /
-  Standby`, `Green = Console ON`, `J-07`).
+  lenticular Power LED light pipe (`6.36 x 1.76 mm` front lens + 3-lead `Kingbright L-93WEGW`
+  Red/Green bi-colour LED in `lower_tub` driven by `firmware/rp2040_reset/code.py`: green while the
+  console is on; the RP2040 is off in standby, so there is no standby light yet (C7), `J-07`).
 - **Clear Acrylic front jewel, Diode-Laser Plywood Jig, 13-part print plate & BOM (`front_bezel.py`,
   `bezel_laser_jig.py`, `plate.py`, `bom.py`):** `front_bezel` (`24.14 x 15.50 x 2.00 mm` Clear Cast
   Acrylic backed by a Cricut vinyl decal) seats flush in the central front nose pocket (`J-06`), cut

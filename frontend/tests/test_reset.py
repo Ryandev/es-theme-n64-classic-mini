@@ -305,7 +305,12 @@ def test_the_reset_command_returns_before_it_sends_keys_through_hotkeygen(tmp_pa
             'case "$*" in *decide*) echo emulator ;; *time_ns*) echo 1 ;;'
             ' *) echo "py $*" >> "{log}" ;; esac'
         ),
-        "hotkeygen": 'while [ ! -f "{release}" ]; do sleep 0.05; done; echo "key $*" >> "{log}"',
+        # Gives up after 20 s on its own: a test that fails before the release must not leave it
+        # looping (one did, for 19 h).
+        "hotkeygen": (
+            'i=0; while [ ! -f "{release}" ] && [ $i -lt 400 ]; do sleep 0.05; i=$((i+1)); done;'
+            ' echo "key $*" >> "{log}"'
+        ),
         "batocera-screenshot": "exit 0",
     }
     for name, body in scripts.items():
@@ -325,8 +330,10 @@ def test_the_reset_command_returns_before_it_sends_keys_through_hotkeygen(tmp_pa
         ["key", "--send", "exit"],
         ["py", "-m", "n64mini.console.reset"],
     ]
-    subprocess.run(["bash", str(script)], env=env, check=True, timeout=5)
-    release.touch()
+    try:
+        subprocess.run(["bash", str(script)], env=env, check=True, timeout=5)
+    finally:
+        release.touch()
     deadline = time.monotonic() + 10
     while time.monotonic() < deadline and _lines(calls) < len(expected):
         time.sleep(0.05)

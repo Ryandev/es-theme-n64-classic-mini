@@ -1,15 +1,18 @@
-# CircuitPython firmware for the Radxa X4 onboard RP2040 (AC-T18, J-03, J-04, J-07).
+# CircuitPython firmware for the Radxa X4's onboard RP2040 (AC-T18, J-04, J-07).
 #
 # Copy this file to the RP2040's CIRCUITPY drive as `code.py` (with `adafruit_hid` in `lib/`).
-# Since the RP2040 is powered by the Radxa X4's always-on S5 standby rail whenever USB-C PD
-# power is connected, it manages both the dual-colour front Power LED (`Kingbright L-819EGW`)
-# and the two momentary `Omron SS-5GL` top-deck switches (`POWER` and `RESET`):
-#   - Dual-colour LED (`Kingbright L-819EGW`, Pin 2 Common Cathode -> GND Pin 9):
-#       * `GP4` (Pin 7) -> 330 Ohm -> Pin 1 Red Anode:   HIGH in standby (`Red = Power`)
-#       * `GP5` (Pin 29) -> 330 Ohm -> Pin 3 Green Anode: HIGH when x86 host is ON (`Green = ON`)
-#   - Momentary Reset `Omron SS-5GL` (`GP3` / Pin 5 to GND): sends `KEY_F13` -> `n64mini-reset`
-#   - Momentary Power `Omron SS-5GL` (`GP2` / Pin 3 to GND, wired in parallel with `PWR_BTN_N`):
-#     wakes the Intel N100 from S5 standby via hardware `PWR_BTN_N` or triggers ACPI shutdown
+#
+# What the RP2040 can and can't do (Radxa X4 V1.11 schematic, sheet 21 "RS2040"): it is powered
+# from the system 3.3 V rail (P3V3_S, via P3V_RP) and its RUN pin follows the N100's platform
+# reset (PLTRST_2040), so it only runs while the PC is on. It can't light a standby LED or wake
+# the PC, and the POWER switch is wired across the X4's own power button (K1), not to the header.
+#
+# Header pins -> RP2040 GPIOs from Radxa's X4 GPIO table, vendored in
+# frontend/vendor/radxa-x4/gpio_header.tsv; tests/test_firmware_pins.py checks every entry below.
+#   - RESET `Omron SS-5GL`: NO -> header pin 5 (GP29), COM -> pin 6 (GND); sends `KEY_F13`
+#   - LED `Kingbright L-93WEGW` (1 red anode, 2 common cathode, 3 green anode):
+#       red anode -> 330 R -> header pin 7 (GP4); green anode -> 330 R -> pin 29 (GP7);
+#       common cathode -> pin 9 (GND)
 
 import time
 import board
@@ -19,17 +22,22 @@ import usb_hid
 from adafruit_hid.keyboard import Keyboard
 from adafruit_hid.keycode import Keycode
 
+# (header pin, GPIO): the pairs tests/test_firmware_pins.py checks against Radxa's table
+RESET_SWITCH = (5, board.GP29)
+LED_RED = (7, board.GP4)
+LED_GREEN = (29, board.GP7)
+
 DEBOUNCE_S = 0.030
 POLL_S = 0.005
 
-reset_pin = digitalio.DigitalInOut(board.GP3)
+reset_pin = digitalio.DigitalInOut(RESET_SWITCH[1])
 reset_pin.direction = digitalio.Direction.INPUT
 reset_pin.pull = digitalio.Pull.UP
 
-led_red = digitalio.DigitalInOut(board.GP4)
+led_red = digitalio.DigitalInOut(LED_RED[1])
 led_red.direction = digitalio.Direction.OUTPUT
 
-led_green = digitalio.DigitalInOut(board.GP5)
+led_green = digitalio.DigitalInOut(LED_GREEN[1])
 led_green.direction = digitalio.Direction.OUTPUT
 
 keyboard = None
@@ -39,7 +47,7 @@ last_change = time.monotonic()
 while True:
     now = time.monotonic()
     host_on = bool(supervisor.runtime.usb_connected)
-    # Red = Standby / Power connected; Green = Console ON (S0 active)
+    # The RP2040 only runs while the PC is on: red while USB is still coming up, then green
     led_red.value = not host_on
     led_green.value = host_on
 

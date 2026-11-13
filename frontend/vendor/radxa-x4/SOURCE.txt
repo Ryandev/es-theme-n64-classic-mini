@@ -1,0 +1,9 @@
+Upstream: Radxa's X4 GPIO definition, https://docs.radxa.com/en/x/x4/software/gpio (fetched
+       2026-11-12): the 40-pin header's physical pins and the RP2040 GPIO (or supply) on each.
+Files: gpio_header.tsv is that table's pin and signal columns, transcribed on 2026-11-12. It was
+       cross-checked against the Radxa X4 V1.11 schematic (dl.radxa.com/x/x4/
+       radxa_x4_v1.11_schematic.pdf, sheet 21 "RS2040", connector GPIO1): GP28 pin 3, GP29 pin 5,
+       GP04 pin 7, GP05 pin 11, GP07 pin 29, supplies 3.3V from P3V3_S and 5V from P5V_A, and
+       each listed alternate function matches the RP2040's own function table.
+Licence: Radxa's documentation is CC BY 4.0. The table is a test reference only (tests/
+       test_firmware_pins.py); nothing in this folder ships.
