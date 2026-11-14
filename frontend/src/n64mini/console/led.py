@@ -2,25 +2,33 @@
 
 The owner's rule (2026-11-13): RED while Batocera's menu is up, GREEN while a game runs. The
 RP2040 can't see which, so ``n64mini-launch.sh`` runs ``led game`` before a game and ``led menu``
-after it, and this writes ``G`` or ``R`` to the RP2040's USB serial console (its ``boot.py``
-names it ``n64mini`` so it can be found). No RP2040 (a dev machine, the VM) is expected: it says
-so on stderr and the launch goes on.
+after it, and this writes ``G`` or ``R`` to the RP2040's USB data channel: the second serial
+port its ``boot.py`` turns on (``if02``; ``if00`` is the REPL console, where a stray Ctrl-C would
+stop the firmware). ``boot.py`` names the device ``n64mini`` so it can be found. The port is put
+in raw mode (no echo bouncing bytes back) and never allowed to hold up a launch (Gemini review
+#3). No RP2040 (a dev machine, the VM) is expected: it says so on stderr and the launch goes on.
 """
 
 from __future__ import annotations
 
+import fcntl
 import os
+import struct
 import sys
+import termios
+import time
+import tty
 from pathlib import Path
 from typing import Final
 
 SERIAL_DIR: Final = Path("/dev/serial/by-id")
-DEVICE_GLOB: Final = "usb-n64mini_*-if00"
+DEVICE_GLOB: Final = "usb-n64mini_*-if02"
+DRAIN_S: Final = 0.5  # how long the byte may take to leave before it is dropped
 COMMANDS: Final = {"game": b"G", "menu": b"R"}
 
 
 def find_device(serial_dir: Path = SERIAL_DIR) -> Path | None:
-    """The RP2040's serial console, or ``None`` if it isn't plugged in."""
+    """The RP2040's LED data channel, or ``None`` if it isn't plugged in."""
     if not serial_dir.is_dir():
         return None
     found = sorted(serial_dir.glob(DEVICE_GLOB))
@@ -35,10 +43,33 @@ def send(state: str, serial_dir: Path = SERIAL_DIR) -> bool:
     # Non-blocking: a wedged serial port must never hold up a game launch.
     fd = os.open(device, os.O_WRONLY | os.O_APPEND | os.O_NOCTTY | os.O_NONBLOCK)
     try:
+        if os.isatty(fd):
+            tty.setraw(fd)  # no echo or line discipline between us and the RP2040
         os.write(fd, COMMANDS[state])
+        if os.isatty(fd):
+            _drain(fd)
     finally:
         os.close(fd)
     return True
+
+
+def _queued(fd: int) -> int:
+    """Bytes still waiting to go out on the tty ``fd``."""
+    count: int = struct.unpack("i", fcntl.ioctl(fd, termios.TIOCOUTQ, b"\0\0\0\0"))[0]
+    return count
+
+
+def _drain(fd: int) -> None:
+    """Let the byte go, then drop anything still stuck so ``close`` can't block.
+
+    Closing a tty with output pending waits for it to drain, up to 30 s, if the RP2040 isn't
+    reading (its firmware stopped): a game launch must not wait on that.
+    """
+    deadline = time.monotonic() + DRAIN_S
+    while _queued(fd) and time.monotonic() < deadline:
+        time.sleep(0.01)
+    if _queued(fd):
+        termios.tcflush(fd, termios.TCOFLUSH)
 
 
 def main(argv: list[str] | None = None) -> int:

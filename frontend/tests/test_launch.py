@@ -5,8 +5,10 @@ from __future__ import annotations
 import ctypes
 import json
 import os
+import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar, Final, override
 
@@ -203,7 +205,7 @@ def test_a_windows_rom_path_maps_to_its_folder_under_wsl() -> None:
     assert ln.rom_file_name(rom) == PORTED
 
 
-def test_the_shell_wrapper_execs_exactly_the_chosen_command(
+def test_the_shell_wrapper_runs_exactly_the_chosen_command(
     console: tuple[Path, Path, Path], tmp_path: Path
 ) -> None:
     """End to end: emulatorlauncher gets Batocera's arguments plus the save-slot pin."""
@@ -236,7 +238,7 @@ def test_the_wrapper_turns_the_led_green_for_the_game_and_red_after(
     roms, _, _ = console
     serial_dir = tmp_path / "by-id"
     serial_dir.mkdir()
-    dev = serial_dir / "usb-n64mini_Console_LED_and_RESET_E660C0D1-if00"
+    dev = serial_dir / "usb-n64mini_Console_LED_and_RESET_E660C0D1-if02"
     dev.write_bytes(b"")
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -259,6 +261,47 @@ def test_the_wrapper_turns_the_led_green_for_the_game_and_red_after(
     )
     assert result.returncode == 3, result.stderr
     assert seen.read_bytes() == b"G"
+    assert dev.read_bytes() == b"GR"
+
+
+def test_a_stop_signal_reaches_the_game_and_the_led_goes_back_to_red(
+    console: tuple[Path, Path, Path], tmp_path: Path
+) -> None:
+    """SIGTERM to the wrapper reaches the game, and the LED still goes red (Gemini review #8)."""
+    roms, _, _ = console
+    serial_dir = tmp_path / "by-id"
+    serial_dir.mkdir()
+    dev = serial_dir / "usb-n64mini_Console_LED_and_RESET_E660C0D1-if02"
+    dev.write_bytes(b"")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    started, stopped = tmp_path / "started", tmp_path / "stopped"
+    stub = bin_dir / "emulatorlauncher"
+    stub.write_text(
+        f"#!/bin/bash\ntrap 'touch \"{stopped}\"; exit 143' TERM\n"
+        f'touch "{started}"\nfor _ in $(seq 300); do sleep 0.1; done\n'
+    )
+    stub.chmod(0o755)
+    env = {
+        **os.environ,
+        "PATH": f"{bin_dir}:{Path(sys.executable).parent}:{os.environ['PATH']}",
+        "N64MINI_SERIAL_DIR": str(serial_dir),
+    }
+    proc = subprocess.Popen(
+        [str(SCRIPT), *_args(roms)], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+    )
+    try:
+        for _ in range(300):
+            if started.exists():
+                break
+            time.sleep(0.05)
+        assert started.exists(), "the game never started"
+        proc.send_signal(signal.SIGTERM)
+        assert proc.wait(timeout=30) == 143
+    finally:
+        proc.kill()
+        proc.wait()
+    assert stopped.exists(), "the game never got the TERM"
     assert dev.read_bytes() == b"GR"
 
 

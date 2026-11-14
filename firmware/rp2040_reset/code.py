@@ -15,14 +15,16 @@
 #       common cathode -> pin 9 (GND)
 #
 # LED (owner, 2026-11-13): RED in the Batocera menu, GREEN while a game runs. The RP2040 can't see
-# which, so the console tells it over the USB serial console: the launch wrapper sends "G" before
-# a game and "R" after it (n64mini.console.led). Red too while USB is still coming up.
+# which, so the console tells it: the launch wrapper sends "G" before a game and "R" after it
+# (n64mini.console.led). Red too while USB is still coming up. The bytes come on the second USB
+# serial port, the data channel boot.py turns on, not the REPL console: a stray Ctrl-C byte on
+# the console would stop this program, and with it RESET (Gemini review #3, 2026-11-14).
 
-import sys
 import time
 import board
 import digitalio
 import supervisor
+import usb_cdc
 import usb_hid
 from adafruit_hid.keyboard import Keyboard
 from adafruit_hid.keycode import Keycode
@@ -53,10 +55,11 @@ last_change = time.monotonic()
 while True:
     now = time.monotonic()
     host_on = bool(supervisor.runtime.usb_connected)
-    while supervisor.runtime.serial_bytes_available:
-        command = sys.stdin.read(1)
-        if command in ("G", "R"):
-            in_game = command == "G"
+    data = usb_cdc.data
+    if data is not None and data.in_waiting:
+        for command in data.read(data.in_waiting):
+            if command in b"GR":
+                in_game = command == ord("G")
     if not host_on:
         in_game = False  # the PC went away mid-game: start again from the menu colour
     green = host_on and in_game

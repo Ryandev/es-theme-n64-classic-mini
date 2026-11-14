@@ -2,7 +2,7 @@
 
 On a real game launch (emulator or port), ``n64mini-launch.sh`` starts this in a detached
 session on the console display (its errors in ``n64mini-launch-animation.log``) and waits
-``0.9 s`` before ``exec``ing the game, so the animation:
+``0.9 s`` before starting the game, so the animation:
 1. Flips the selected centre card (``CARD_BOX``) horizontally from the game's box art
    (``front``) to the N64 boot graphic (``back``),
 2. Expands the flipped card to full screen (``SCREEN_BOX``) with cubic ease-out while fading

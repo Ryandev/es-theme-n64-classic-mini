@@ -16,8 +16,17 @@ if [ "${command[0]}" = "setsid" ]; then
     exec "${command[@]}"  # detached: it returns at once, so the LED stays on the menu colour
 fi
 # Power LED: green while the game runs, red again after (n64mini.console.led; owner 2026-11-13).
+# The game runs as a child this script waits on (no exec), so the LED can go back to red after
+# it. A TERM/INT/HUP sent to this script is passed on to the game, and the LED still goes red
+# (Gemini review #8): without the trap the game would be orphaned and the LED left green.
 python3 -m n64mini.console.led game || true
+"${command[@]}" <&0 &
+game=$!
+trap 'kill -TERM "$game" 2>/dev/null' TERM INT HUP
 status=0
-"${command[@]}" || status=$?
+wait "$game" || status=$?
+while kill -0 "$game" 2>/dev/null; do  # a trapped signal ends `wait` early: wait for the game
+    wait "$game" || status=$?
+done
 python3 -m n64mini.console.led menu || true
 exit "$status"

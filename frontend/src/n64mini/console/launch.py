@@ -2,10 +2,11 @@
 
 Batocera runs ``n64mini-launch.sh`` instead of ``emulatorlauncher`` for N64
 (``es_systems_n64.cfg``), with the same arguments. The script asks this module what to
-run (the command comes back NUL-separated) and ``exec``s it.
+run (the command comes back NUL-separated) and runs it, waiting so the power LED can go back
+to red after the game (``n64mini.console.led``).
 
 On a real game launch the script also starts the card-flip animation
-(``n64mini.console.launch_animation``, AC-T17) before ``exec``ing the game.
+(``n64mini.console.launch_animation``, AC-T17) before starting the game.
 
 A game flipped to Port (``modes.json``, written by ``n64mini-flip``) runs its port, as
 configured in ``ports.json``. Everything else is handed to ``emulatorlauncher``
